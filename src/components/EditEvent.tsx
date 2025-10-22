@@ -37,6 +37,7 @@ import {
   getGroupedTimezoneOptions,
   createTimestampInTimezone,
 } from "@/lib/eventTimezone";
+import { encodeGeohash } from "@/lib/geolocation";
 
 interface EditEventProps {
   event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting;
@@ -267,14 +268,22 @@ export function EditEvent({ event, onEventUpdated }: EditEventProps) {
       ];
 
       // Add location details if available
-      if (formData.locationDetails.placeId) {
-        tags.push(
-          [
-            "g",
-            `${formData.locationDetails.lat},${formData.locationDetails.lng}`,
-          ],
-          ["place_id", formData.locationDetails.placeId]
+      if (formData.locationDetails.lat && formData.locationDetails.lng) {
+        // Encode coordinates as geohash (NIP-52)
+        const geohash = encodeGeohash(
+          formData.locationDetails.lat,
+          formData.locationDetails.lng,
+          9 // 9 characters gives ~4.8m precision
         );
+        tags.push(["g", geohash]);
+        
+        // Also store raw coordinates for backwards compatibility
+        tags.push(["lat", formData.locationDetails.lat.toString()]);
+        tags.push(["lon", formData.locationDetails.lng.toString()]);
+        
+        if (formData.locationDetails.placeId) {
+          tags.push(["place_id", formData.locationDetails.placeId]);
+        }
       }
 
       // Add start and end timestamps

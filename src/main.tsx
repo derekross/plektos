@@ -7,6 +7,7 @@ import NostrProvider from "@/components/NostrProvider";
 import { App } from "./App";
 import "@fontsource-variable/outfit";
 import "./index.css";
+import "leaflet/dist/leaflet.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,10 +28,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <NostrLoginProvider storageKey="plektos-login">
           <NostrProvider
             relays={[
-              "wss://relay.primal.net",
-              "wss://relay.nostr.band",
               "wss://relay.damus.io",
-              "wss://relay.ditto.pub",
+              "wss://nos.lol",
+              "wss://relay.snort.social",
+              "wss://relay.nostr.band",
+              "wss://relay.primal.net",
             ]}
           >
             <App />

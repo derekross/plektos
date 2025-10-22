@@ -7,6 +7,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Link } from "react-router-dom";
+import { nip19 } from "nostr-tools";
 
 interface RSVPAvatarsProps {
   pubkeys: string[];
@@ -37,20 +39,23 @@ function RSVPAvatar({ pubkey }: { pubkey: string }) {
   const { data: author } = useAuthor(pubkey);
   const displayName = author?.metadata?.name ?? genUserName(pubkey);
   const avatarUrl = author?.metadata?.picture;
+  const npub = nip19.npubEncode(pubkey);
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Avatar className="h-6 w-6 sm:h-8 sm:w-8 border-2 border-background">
-            <AvatarImage src={avatarUrl} alt={displayName} />
-            <AvatarFallback className="text-xs">
-              {displayName.slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <Link to={`/profile/${npub}`} className="block">
+            <Avatar className="h-6 w-6 sm:h-8 sm:w-8 border-2 border-background hover:border-primary/50 transition-colors cursor-pointer">
+              <AvatarImage src={avatarUrl} alt={displayName} />
+              <AvatarFallback className="text-xs">
+                {displayName.slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </Link>
         </TooltipTrigger>
         <TooltipContent>
-          <p className="text-sm">{displayName}</p>
+          <p className="text-sm">View {displayName}'s profile</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

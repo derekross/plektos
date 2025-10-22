@@ -6,8 +6,10 @@ import { defineConfig } from "vitest/config";
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
   server: {
-    host: "::",
+    host: true, // Allow external connections (equivalent to 0.0.0.0)
     port: 8080,
+    strictPort: false, // Allow port fallback if 8080 is busy
+    open: false, // Don't auto-open browser
   },
   plugins: [react()],
   build: {

@@ -12,7 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Link } from "react-router-dom";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createEventIdentifier } from "@/lib/nip19Utils";
-import type { DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting, InteractiveRoom } from "@/lib/eventTypes";
+import type { DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting, InteractiveRoom, EventRSVP } from "@/lib/eventTypes";
 import { isLiveEvent, isInPersonEvent, getStreamingUrl, getLiveEventStatus } from "@/lib/liveEventUtils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { CalendarIcon, Search, X, Filter, ChevronDown, Grid3X3, Calendar as CalendarViewIcon } from "lucide-react";
+import { CalendarIcon, Search, X, Filter, ChevronDown, Grid3X3, Calendar as CalendarViewIcon, Map as MapIcon } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
@@ -40,10 +40,14 @@ import { MonthlyCalendarView } from "@/components/MonthlyCalendarView";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { getPlatformIcon, isLiveEventType } from "@/lib/platformIcons";
+import { MapView } from "@/components/MapView";
+import { LocationSearch } from "@/components/LocationSearch";
+import { sortEventsByDistance, formatDistance, type Coordinates } from "@/lib/geolocation";
+import { formatAmount } from "@/lib/lightning";
 
 export function Home() {
   console.log("Home component rendering");
-  const [viewMode, setViewMode] = useState<"grid" | "calendar">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "calendar" | "map">("grid");
   
   // Use regular loading for both views - simpler and more reliable
   const { data: allEventsData, isLoading, error } = useEvents({
@@ -73,6 +77,9 @@ export function Home() {
   );
   const [eventTypeFilter, setEventTypeFilter] = useState<"all" | "in-person" | "live">("all");
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [locationFilter, setLocationFilter] = useState("");
+  const [locationCoords, setLocationCoords] = useState<Coordinates | null>(null);
+  const [sortByDistance, setSortByDistance] = useState(false);
 
   // Filter events based on all criteria including mute list
   const calendarEvents = allEvents?.filter((event) => {
@@ -282,8 +289,19 @@ export function Home() {
       }
 
       return true;
-    })
-    ?.sort((a, b) => {
+    });
+
+  // Apply sorting - either by distance or by time
+  const sortedEvents = useMemo(() => {
+    if (!allFilteredEvents) return [];
+    
+    if (sortByDistance && locationCoords) {
+      // Sort by distance from selected location
+      return sortEventsByDistance(allFilteredEvents, locationCoords);
+    }
+    
+    // Default: sort by start time
+    return [...allFilteredEvents].sort((a, b) => {
       const getEventStartTime = (event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom) => {
         // LiveEvent (30311), InteractiveRoom (30312), and RoomMeeting (30313) use "starts" tag, others use "start"
         const startTime = (event.kind === 30311 || event.kind === 30312 || event.kind === 30313)
@@ -327,11 +345,12 @@ export function Home() {
 
       return getEventStartTime(a) - getEventStartTime(b);
     });
+  }, [allFilteredEvents, sortByDistance, locationCoords]);
 
   // For grid view, limit the displayed events for pagination
-  const filteredEvents = viewMode === "calendar" 
-    ? allFilteredEvents 
-    : allFilteredEvents?.slice(0, displayedEventCount);
+  const filteredEvents = viewMode === "calendar" || viewMode === "map"
+    ? sortedEvents 
+    : sortedEvents?.slice(0, displayedEventCount);
 
   const clearFilters = () => {
     setShowPastEvents(false);
@@ -339,6 +358,9 @@ export function Home() {
     setDateRange(undefined);
     setSelectedCategories([]);
     setEventTypeFilter("all");
+    setLocationFilter("");
+    setLocationCoords(null);
+    setSortByDistance(false);
   };
 
   const hasActiveFilters =
@@ -346,10 +368,12 @@ export function Home() {
     dateRange ||
     showPastEvents ||
     selectedCategories.length > 0 ||
-    eventTypeFilter !== "all";
+    eventTypeFilter !== "all" ||
+    locationFilter ||
+    sortByDistance;
 
   // Load more functionality for grid view
-  const canLoadMore = viewMode === "grid" && allFilteredEvents && displayedEventCount < allFilteredEvents.length;
+  const canLoadMore = viewMode === "grid" && sortedEvents && displayedEventCount < sortedEvents.length;
   
   const loadMoreEvents = () => {
     setDisplayedEventCount(prev => prev + 50);
@@ -453,7 +477,7 @@ export function Home() {
             type="single"
             value={viewMode}
             onValueChange={(value) => {
-              if (value) setViewMode(value as "grid" | "calendar");
+              if (value) setViewMode(value as "grid" | "calendar" | "map");
             }}
             className="justify-start sm:justify-end bg-muted/50 rounded-2xl p-1"
           >
@@ -472,6 +496,14 @@ export function Home() {
             >
               <CalendarViewIcon className="h-4 w-4" />
               <span className="hidden sm:inline font-medium">Calendar</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem 
+              value="map" 
+              aria-label="Map view" 
+              className="gap-2 rounded-xl data-[state=on]:bg-primary data-[state=on]:text-primary-foreground transition-all duration-200"
+            >
+              <MapIcon className="h-4 w-4" />
+              <span className="hidden sm:inline font-medium">Map</span>
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
@@ -544,6 +576,42 @@ export function Home() {
                   <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-xl">
                     💡 Search across event titles, descriptions, locations, and organizer names
                   </div>
+                </div>
+
+                {/* Location Filter */}
+                <div className="flex-1 space-y-3">
+                  <Label className="text-base font-semibold flex items-center gap-2">
+                    <MapIcon className="h-4 w-4 text-primary" />
+                    Filter by Location
+                  </Label>
+                  <LocationSearch
+                    value={locationFilter}
+                    onChange={setLocationFilter}
+                    onLocationSelect={(location) => {
+                      setLocationCoords({ lat: location.lat, lng: location.lng });
+                      setSortByDistance(true);
+                    }}
+                    className="w-full"
+                  />
+                  {locationCoords && sortByDistance && (
+                    <div className="flex items-center justify-between bg-primary/10 p-3 rounded-xl">
+                      <div className="text-sm text-primary">
+                        📍 Sorting by distance from {locationFilter.split(',')[0]}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setLocationFilter("");
+                          setLocationCoords(null);
+                          setSortByDistance(false);
+                        }}
+                        className="h-7 px-2 rounded-xl hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Category Filter */}
@@ -690,12 +758,14 @@ export function Home() {
             <p className="text-muted-foreground">Try adjusting your filters or check back later for new events!</p>
           </div>
         </div>
+      ) : viewMode === "map" ? (
+        <MapView events={filteredEvents || []} className="mb-6" />
       ) : viewMode === "calendar" ? (
         <MonthlyCalendarView events={filteredEvents || []} />
       ) : (
         <>
           <div className="grid gap-3 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredEvents?.map((event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom, index) => {
+            {filteredEvents?.map((event: (DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom) & { distance?: number }, index) => {
               const title =
                 event.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled";
               const description = event.content;
@@ -707,6 +777,44 @@ export function Home() {
               )?.[1];
               const imageUrl = event.tags.find((tag) => tag[0] === "image")?.[1];
               const eventIdentifier = createEventIdentifier(event);
+              
+              // Extract pricing information
+              const price = event.tags.find((tag) => tag[0] === "price")?.[1];
+              const lightningAddress = event.tags.find((tag) => tag[0] === "lud16")?.[1];
+              const isPaidEvent = price && lightningAddress;
+              
+              // Calculate attendee count from RSVPs
+              const eventAddress = event.tags.find((tag) => tag[0] === "d")?.[1] 
+                ? `${event.kind}:${event.pubkey}:${event.tags.find((tag) => tag[0] === "d")?.[1]}` 
+                : null;
+              const eventId = event.id;
+              
+              // Get RSVPs for this event from allEventsData
+              const rsvpEvents = (allEventsData || [])
+                .filter((e): e is EventRSVP => e.kind === 31925)
+                .filter((e) => {
+                  // Match by event ID (e tag) for current version
+                  const hasEventId = e.tags.some((tag) => tag[0] === "e" && tag[1] === eventId);
+                  // Match by address coordinate (a tag) for all versions of replaceable events
+                  const hasAddress = eventAddress && e.tags.some((tag) => tag[0] === "a" && tag[1] === eventAddress);
+                  return hasEventId || hasAddress;
+                });
+              
+              // Get most recent RSVP for each user
+              const latestRSVPs = rsvpEvents.reduce((acc, curr) => {
+                const existingRSVP = acc.find((e) => e.pubkey === curr.pubkey);
+                if (!existingRSVP || curr.created_at > existingRSVP.created_at) {
+                  const filtered = acc.filter((e) => e.pubkey !== curr.pubkey);
+                  return [...filtered, curr];
+                }
+                return acc;
+              }, [] as EventRSVP[]);
+              
+              // Count accepted RSVPs
+              const acceptedRSVPs = latestRSVPs.filter(
+                (e) => e.tags.find((tag) => tag[0] === "status")?.[1] === "accepted"
+              );
+              const attendeeCount = acceptedRSVPs.length;
               
               // Check if this is a live event
               const live = isLiveEvent(event);
@@ -790,17 +898,58 @@ export function Home() {
                       <p className="line-clamp-2 text-sm text-muted-foreground leading-relaxed">
                         {description}
                       </p>
-                      {streamingUrl ? (
-                        <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-2 rounded-xl border border-blue-200 dark:border-blue-800">
-                          <span className="text-blue-600 dark:text-blue-400">🎥</span>
-                          <span className="font-medium text-blue-800 dark:text-blue-200">Live Stream</span>
-                        </div>
-                      ) : location && (
-                        <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 p-2 rounded-xl">
-                          <span className="text-primary">📍</span>
-                          <span className="font-medium">{location}</span>
-                        </div>
-                      )}
+                      
+                      {/* Additional event details */}
+                      <div className="mt-3 space-y-2">
+                        {/* Pricing information */}
+                        {isPaidEvent ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-800">
+                            <span className="text-amber-600 dark:text-amber-400">🎟️</span>
+                            <span className="font-medium text-amber-800 dark:text-amber-200">
+                              {formatAmount(parseInt(price))}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-green-50 dark:bg-green-950/20 p-2 rounded-xl border border-green-200 dark:border-green-800">
+                            <span className="text-green-600 dark:text-green-400">🆓</span>
+                            <span className="font-medium text-green-800 dark:text-green-200">
+                              Free Event
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Attendee count (show for any count, but with different styling) */}
+                        {attendeeCount > 0 && (
+                          <div className={`flex items-center gap-2 text-sm text-muted-foreground p-2 rounded-xl border ${
+                            attendeeCount > 5 
+                              ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
+                              : 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
+                          }`}>
+                            <span className={`${attendeeCount > 5 ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'}`}>👥</span>
+                            <span className={`font-medium ${attendeeCount > 5 ? 'text-green-800 dark:text-green-200' : 'text-blue-800 dark:text-blue-200'}`}>
+                              {attendeeCount} {attendeeCount === 1 ? 'person' : 'people'} going
+                            </span>
+                          </div>
+                        )}
+                        
+                        {/* Live stream or location */}
+                        {streamingUrl ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-2 rounded-xl border border-blue-200 dark:border-blue-800">
+                            <span className="text-blue-600 dark:text-blue-400">🎥</span>
+                            <span className="font-medium text-blue-800 dark:text-blue-200">Live Stream</span>
+                          </div>
+                        ) : location && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 p-2 rounded-xl">
+                            <span className="text-primary">📍</span>
+                            <span className="font-medium">{location}</span>
+                            {sortByDistance && event.distance !== undefined && (
+                              <Badge variant="secondary" className="ml-auto">
+                                {formatDistance(event.distance)} away
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </CardContent>
                     </Card>
                   </Link>
@@ -817,7 +966,7 @@ export function Home() {
                 variant="outline"
                 className="px-8 py-3 rounded-2xl border-2 hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 font-medium"
               >
-                🎉 Load More Events ({allFilteredEvents!.length - displayedEventCount} remaining)
+                🎉 Load More Events ({sortedEvents!.length - displayedEventCount} remaining)
               </Button>
             </div>
           )}
@@ -828,7 +977,7 @@ export function Home() {
               <div className="text-xs text-muted-foreground space-y-2 text-center">
                 <div>Debug Info:</div>
                 <div>Total events loaded: {calendarEvents?.length || 0}</div>
-                <div>After filtering: {allFilteredEvents?.length || 0}</div>
+                <div>After filtering: {sortedEvents?.length || 0}</div>
                 <div>Currently displayed: {filteredEvents?.length || 0}</div>
                 <div>Can load more: {String(canLoadMore)}</div>
                 {canLoadMore && (

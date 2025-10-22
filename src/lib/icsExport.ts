@@ -90,3 +90,155 @@ export function downloadICS(event: DateBasedEvent | TimeBasedEvent | LiveEvent |
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export function openInCalendar(event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting) {
+  const title = event.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled";
+  const description = event.content || "";
+  const location = event.tags.find((tag) => tag[0] === "location")?.[1] || "";
+  
+  // Get start and end times
+  const startTag = (event.kind === 30311 || event.kind === 30313)
+    ? event.tags.find((tag) => tag[0] === "starts")?.[1]
+    : event.tags.find((tag) => tag[0] === "start")?.[1];
+  const endTag = event.tags.find((tag) => tag[0] === "end")?.[1] || 
+                 event.tags.find((tag) => tag[0] === "ends")?.[1];
+  
+  if (!startTag) {
+    throw new Error("Event must have a start time");
+  }
+
+  // Determine if this is a time-based event
+  const isTimeBasedEvent = event.kind === 31923 || event.kind === 30311 || event.kind === 30313;
+  
+  let startDate: Date;
+  let endDate: Date;
+  
+  if (isTimeBasedEvent) {
+    // Handle Unix timestamps
+    let timestamp: number;
+    if (startTag.match(/^\d{10}$/)) {
+      timestamp = parseInt(startTag) * 1000;
+    } else if (startTag.match(/^\d{13}$/)) {
+      timestamp = parseInt(startTag);
+    } else {
+      throw new Error(`Invalid timestamp format: ${startTag}`);
+    }
+    startDate = new Date(timestamp);
+    
+    if (endTag) {
+      let endTimestamp: number;
+      if (endTag.match(/^\d{10}$/)) {
+        endTimestamp = parseInt(endTag) * 1000;
+      } else if (endTag.match(/^\d{13}$/)) {
+        endTimestamp = parseInt(endTag);
+      } else {
+        throw new Error(`Invalid timestamp format: ${endTag}`);
+      }
+      endDate = new Date(endTimestamp);
+    } else {
+      endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // Default to 1 hour
+    }
+  } else {
+    // Handle date-only events
+    startDate = new Date(startTag + 'T00:00:00Z');
+    endDate = endTag ? new Date(endTag + 'T00:00:00Z') : new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  // Format dates for calendar URLs
+  const formatDateForURL = (date: Date) => {
+    return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  };
+
+  const startFormatted = formatDateForURL(startDate);
+  const endFormatted = formatDateForURL(endDate);
+
+  // Create calendar URLs for different providers
+  const calendarUrls = {
+    google: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startFormatted}/${endFormatted}&details=${encodeURIComponent(description)}&location=${encodeURIComponent(location)}`,
+    outlook: `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(title)}&startdt=${startFormatted}&enddt=${endFormatted}&body=${encodeURIComponent(description)}&location=${encodeURIComponent(location)}`,
+    yahoo: `https://calendar.yahoo.com/?v=60&view=d&type=20&title=${encodeURIComponent(title)}&st=${startFormatted}&et=${endFormatted}&desc=${encodeURIComponent(description)}&in_loc=${encodeURIComponent(location)}`,
+    apple: `data:text/calendar;charset=utf8,${encodeURIComponent(generateICS(event))}`
+  };
+
+  // Try to detect the user's preferred calendar
+  const userAgent = navigator.userAgent.toLowerCase();
+  let preferredCalendar = 'google'; // Default to Google Calendar
+
+  if (userAgent.includes('mac') || userAgent.includes('iphone') || userAgent.includes('ipad')) {
+    preferredCalendar = 'apple';
+  } else if (userAgent.includes('windows') && userAgent.includes('outlook')) {
+    preferredCalendar = 'outlook';
+  }
+
+  // Open the preferred calendar
+  window.open(calendarUrls[preferredCalendar as keyof typeof calendarUrls], '_blank');
+}
+
+export function getCalendarOptions(event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting) {
+  const title = event.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled";
+  const description = event.content || "";
+  const location = event.tags.find((tag) => tag[0] === "location")?.[1] || "";
+  
+  // Get start and end times
+  const startTag = (event.kind === 30311 || event.kind === 30313)
+    ? event.tags.find((tag) => tag[0] === "starts")?.[1]
+    : event.tags.find((tag) => tag[0] === "start")?.[1];
+  const endTag = event.tags.find((tag) => tag[0] === "end")?.[1] || 
+                 event.tags.find((tag) => tag[0] === "ends")?.[1];
+  
+  if (!startTag) {
+    throw new Error("Event must have a start time");
+  }
+
+  // Determine if this is a time-based event
+  const isTimeBasedEvent = event.kind === 31923 || event.kind === 30311 || event.kind === 30313;
+  
+  let startDate: Date;
+  let endDate: Date;
+  
+  if (isTimeBasedEvent) {
+    // Handle Unix timestamps
+    let timestamp: number;
+    if (startTag.match(/^\d{10}$/)) {
+      timestamp = parseInt(startTag) * 1000;
+    } else if (startTag.match(/^\d{13}$/)) {
+      timestamp = parseInt(startTag);
+    } else {
+      throw new Error(`Invalid timestamp format: ${startTag}`);
+    }
+    startDate = new Date(timestamp);
+    
+    if (endTag) {
+      let endTimestamp: number;
+      if (endTag.match(/^\d{10}$/)) {
+        endTimestamp = parseInt(endTag) * 1000;
+      } else if (endTag.match(/^\d{13}$/)) {
+        endTimestamp = parseInt(endTag);
+      } else {
+        throw new Error(`Invalid timestamp format: ${endTag}`);
+      }
+      endDate = new Date(endTimestamp);
+    } else {
+      endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // Default to 1 hour
+    }
+  } else {
+    // Handle date-only events
+    startDate = new Date(startTag + 'T00:00:00Z');
+    endDate = endTag ? new Date(endTag + 'T00:00:00Z') : new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  // Format dates for calendar URLs
+  const formatDateForURL = (date: Date) => {
+    return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  };
+
+  const startFormatted = formatDateForURL(startDate);
+  const endFormatted = formatDateForURL(endDate);
+
+  return {
+    google: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startFormatted}/${endFormatted}&details=${encodeURIComponent(description)}&location=${encodeURIComponent(location)}`,
+    outlook: `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(title)}&startdt=${startFormatted}&enddt=${endFormatted}&body=${encodeURIComponent(description)}&location=${encodeURIComponent(location)}`,
+    yahoo: `https://calendar.yahoo.com/?v=60&view=d&type=20&title=${encodeURIComponent(title)}&st=${startFormatted}&et=${endFormatted}&desc=${encodeURIComponent(description)}&in_loc=${encodeURIComponent(location)}`,
+    apple: `data:text/calendar;charset=utf8,${encodeURIComponent(generateICS(event))}`
+  };
+}

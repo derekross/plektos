@@ -51,17 +51,19 @@ export function LocationSearch({
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSearch = useCallback(async (query: string) => {
-    if (!query) {
+    if (!query || query.trim().length < 2) {
       setSearchResults([]);
       return;
     }
 
     setIsLoading(true);
     try {
+      console.log("LocationSearch: Searching for:", query);
       const results = await search(query);
+      console.log("LocationSearch: Got results:", results?.length || 0);
       setSearchResults(results || []);
     } catch (error) {
-      console.error("Error searching locations:", error);
+      console.error("LocationSearch: Error searching locations:", error);
       setSearchResults([]);
     } finally {
       setIsLoading(false);
@@ -130,8 +132,17 @@ export function LocationSearch({
                   <div className="flex items-center justify-center py-6">
                     <Loader2 className="h-6 w-6 animate-spin" />
                   </div>
+                ) : value.trim().length < 2 ? (
+                  <div className="py-6 text-center text-sm text-muted-foreground">
+                    Type at least 2 characters to search...
+                  </div>
                 ) : (
-                  "No locations found."
+                  <div className="py-6 text-center text-sm">
+                    <p className="font-medium">No locations found.</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Try a more specific address or city name
+                    </p>
+                  </div>
                 )}
               </CommandEmpty>
               <CommandGroup>

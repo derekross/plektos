@@ -11,20 +11,24 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar, Ticket, History } from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { useUserRSVPs, type UserRSVPWithEvent } from "@/hooks/useUserRSVPs";
+import { useUserRSVPs, type UserRSVPWithEvent, type UserTicketWithEvent } from "@/hooks/useUserRSVPs";
 import { LoginArea } from "@/components/auth/LoginArea";
 import { createEventIdentifier } from "@/lib/nip19Utils";
 import { TimezoneDisplay } from '@/components/TimezoneDisplay';
+import { TicketQRCode } from '@/components/TicketQRCode';
 
-function EventCard({ rsvpData }: { rsvpData: UserRSVPWithEvent }) {
-  const { event, status, eventTitle } = rsvpData;
+function EventCard({ eventData }: { eventData: UserRSVPWithEvent | UserTicketWithEvent }) {
+  const isTicket = 'isTicket' in eventData && eventData.isTicket;
+  const event = eventData.event;
+  const eventTitle = eventData.eventTitle;
   const location = event.tags.find((tag) => tag[0] === "location")?.[1];
   const imageUrl = event.tags.find((tag) => tag[0] === "image")?.[1];
   const startTime = event.tags.find((tag) => tag[0] === "start")?.[1];
   const eventIdentifier = createEventIdentifier(event);
+  
   return (
-    <Link to={`/event/${eventIdentifier}`}> 
-      <Card className="h-full transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/20 overflow-hidden rounded-none sm:rounded-3xl border-2 border-transparent hover:border-primary/20 group mb-4">
+    <Card className="h-full transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/20 overflow-hidden rounded-none sm:rounded-3xl border-2 border-transparent hover:border-primary/20 group mb-4">
+      <Link to={`/event/${eventIdentifier}`} className="block">
         <div className="aspect-video w-full overflow-hidden relative">
           <img
             src={imageUrl || "/default-calendar.png"}
@@ -42,23 +46,32 @@ function EventCard({ rsvpData }: { rsvpData: UserRSVPWithEvent }) {
               <TimezoneDisplay event={event} showLocalTime={false} />
             </div>
           )}
-          <div className="flex items-center justify-between mb-2 mt-2">
-            <Badge
-              variant="outline"
-              className={
-                status === "accepted"
-                  ? "bg-green-500/10 text-green-500"
-                  : status === "tentative"
-                  ? "bg-yellow-500/10 text-yellow-500"
-                  : "bg-red-500/10 text-red-500"
-              }
-            >
-              {status === "accepted"
-                ? "Going"
-                : status === "tentative"
-                ? "Maybe"
-                : "Can't Go"}
-            </Badge>
+                  <div className="flex items-center justify-between mb-2 mt-2">
+                    {isTicket ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-500/10 text-amber-500"
+                      >
+                        🎟️ Ticket {eventData.sequenceNumber && eventData.totalTickets ? `${eventData.sequenceNumber}/${eventData.totalTickets}` : 'Purchased'}
+                      </Badge>
+                    ) : (
+              <Badge
+                variant="outline"
+                className={
+                  !isTicket && 'status' in eventData && eventData.status === "accepted"
+                    ? "bg-green-500/10 text-green-500"
+                    : !isTicket && 'status' in eventData && eventData.status === "tentative"
+                    ? "bg-yellow-500/10 text-yellow-500"
+                    : "bg-red-500/10 text-red-500"
+                }
+              >
+                {!isTicket && 'status' in eventData && eventData.status === "accepted"
+                  ? "Going"
+                  : !isTicket && 'status' in eventData && eventData.status === "tentative"
+                  ? "Maybe"
+                  : "Can't Go"}
+              </Badge>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-4 sm:p-6 pt-0">
@@ -71,16 +84,31 @@ function EventCard({ rsvpData }: { rsvpData: UserRSVPWithEvent }) {
               <span className="font-medium">{location}</span>
             </div>
           )}
-          {rsvpData.rsvp.content && (
+          {isTicket && 'amount' in eventData && eventData.amount > 0 && (
+            <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-800">
+              <span className="text-amber-600 dark:text-amber-400">💰</span>
+              <span className="font-medium text-amber-800 dark:text-amber-200">
+                Paid {eventData.amount} sats
+              </span>
+            </div>
+          )}
+          {!isTicket && 'rsvp' in eventData && eventData.rsvp.content && (
             <p className="text-muted-foreground text-sm mt-2">
-              Your note: {rsvpData.rsvp.content}
+              Your note: {eventData.rsvp.content}
             </p>
           )}
         </CardContent>
-      </Card>
-    </Link>
+      </Link>
+      
+      {/* Show QR Code for purchased tickets - OUTSIDE the Link */}
+      {isTicket && (
+        <div className="px-4 sm:px-6 pb-4 sm:pb-6">
+          <TicketQRCode ticket={eventData as UserTicketWithEvent} />
+        </div>
+      )}
+    </Card>
   );
-}
+        }
 
 function LoadingSkeleton() {
   return (
@@ -165,9 +193,11 @@ export function MyTickets() {
           ) : (
             <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {rsvpData?.upcoming && rsvpData.upcoming.length > 0 ? (
-                rsvpData.upcoming.map((rsvpEvent) => (
-                  <EventCard key={rsvpEvent.rsvp.id} rsvpData={rsvpEvent} />
-                ))
+                rsvpData.upcoming.map((eventData) => {
+                  const isTicket = 'isTicket' in eventData && eventData.isTicket;
+                  const key = isTicket ? (eventData as UserTicketWithEvent).zapReceipt.id : (eventData as UserRSVPWithEvent).rsvp.id;
+                  return <EventCard key={key} eventData={eventData} />;
+                })
               ) : (
                 <Card className="p-8 text-center col-span-full">
                   <CardContent className="pt-6">
@@ -202,9 +232,11 @@ export function MyTickets() {
           ) : (
             <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {rsvpData?.past && rsvpData.past.length > 0 ? (
-                rsvpData.past.map((rsvpEvent) => (
-                  <EventCard key={rsvpEvent.rsvp.id} rsvpData={rsvpEvent} />
-                ))
+                rsvpData.past.map((eventData) => {
+                  const isTicket = 'isTicket' in eventData && eventData.isTicket;
+                  const key = isTicket ? (eventData as UserTicketWithEvent).zapReceipt.id : (eventData as UserRSVPWithEvent).rsvp.id;
+                  return <EventCard key={key} eventData={eventData} />;
+                })
               ) : (
                 <Card className="p-8 text-center col-span-full">
                   <CardContent className="pt-6">

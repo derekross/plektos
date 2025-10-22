@@ -6,6 +6,7 @@ import { Profile } from "@/pages/Profile";
 import { MyTickets } from "@/pages/MyTickets";
 import { SocialFeed } from "@/pages/SocialFeed";
 import { TestNotifications } from "@/pages/TestNotifications";
+import { VerifyTicket } from "@/pages/VerifyTicket";
 
 export default function AppRouter() {
   return (
@@ -17,6 +18,7 @@ export default function AppRouter() {
       <Route path="/tickets" element={<MyTickets />} />
       <Route path="/feed" element={<SocialFeed />} />
       <Route path="/test-notifications" element={<TestNotifications />} />
+      <Route path="/verify-ticket" element={<VerifyTicket />} />
     </Routes>
   );
 }

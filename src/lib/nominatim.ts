@@ -1,5 +1,3 @@
-import { debounce } from "lodash";
-
 interface NominatimResult {
   place_id: number;
   display_name: string;
@@ -27,6 +25,7 @@ export async function searchLocations(
   }
 
   try {
+    console.log("Searching for location:", query);
     const response = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
         query
@@ -40,10 +39,12 @@ export async function searchLocations(
     );
 
     if (!response.ok) {
+      console.error(`Nominatim API error: ${response.status} ${response.statusText}`);
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log(`Found ${data.length} results for "${query}"`, data);
 
     // Cache the results
     searchCache.set(query, data);
@@ -60,18 +61,40 @@ export async function searchLocations(
   }
 }
 
-// Create a debounced version of the search function
-const debouncedSearch = debounce(
-  async (query: string): Promise<NominatimResult[]> => {
-    return searchLocations(query);
-  },
-  150,
-  { leading: true, trailing: true, maxWait: 500 }
-);
+// Create a custom debounced search that properly handles async
+let searchTimeout: NodeJS.Timeout | null = null;
+const pendingSearches = new Map<string, Promise<NominatimResult[]>>();
 
-// Export a wrapper that ensures we always return a Promise
 export const search = (query: string): Promise<NominatimResult[]> => {
   return new Promise((resolve) => {
-    debouncedSearch(query).then(resolve);
+    // Clear any pending timeout
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+
+    // If there's already a pending search for this exact query, return it
+    if (pendingSearches.has(query)) {
+      pendingSearches.get(query)!.then(resolve);
+      return;
+    }
+
+    // Set a new timeout for the search
+    searchTimeout = setTimeout(async () => {
+      const searchPromise = searchLocations(query);
+      pendingSearches.set(query, searchPromise);
+
+      try {
+        const results = await searchPromise;
+        resolve(results);
+      } catch (error) {
+        console.error("Error in debounced search:", error);
+        resolve([]);
+      } finally {
+        // Clean up after a delay
+        setTimeout(() => {
+          pendingSearches.delete(query);
+        }, 1000);
+      }
+    }, 300); // 300ms debounce delay
   });
 };

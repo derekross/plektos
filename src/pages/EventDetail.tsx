@@ -19,7 +19,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Share2, Calendar, Users } from "lucide-react";
+import { Share2, Calendar, Users, Copy, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { RSVPAvatars } from "@/components/RSVPAvatars";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type {
@@ -38,7 +44,7 @@ import { ZapReceipts } from "@/components/ZapReceipts";
 import { ContactOrganizerDialog } from "@/components/ContactOrganizerDialog";
 import { EventComments } from "@/components/EventComments";
 import { EventCategories } from "@/components/EventCategories";
-import { downloadICS } from "@/lib/icsExport";
+import { CalendarOptions } from "@/components/CalendarOptions";
 import { decodeEventIdentifier, createEventUrl } from "@/lib/nip19Utils";
 import { UserActionsMenu } from "@/components/UserActionsMenu";
 import {
@@ -382,6 +388,92 @@ export function EventDetail() {
     }
   };
 
+  const handleCopyEventUrl = async () => {
+    if (!event) return;
+    
+    try {
+      const title =
+        event.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled Event";
+      const location = event.tags.find((tag) => tag[0] === "location")?.[1];
+      const startTime = event.tags.find((tag) => tag[0] === "start")?.[1];
+
+      // Construct the share message (same as the Nostr share message)
+      let shareMessage = `🎉 Join me at ${title}!\n\n`;
+
+      if (startTime) {
+        const eventTimezone = getEventTimezone(event);
+        const timezoneAbbr = getTimezoneAbbreviation(
+          eventTimezone,
+          new Date(parseInt(startTime) * 1000).getTime()
+        );
+
+        if (event.kind === 31922) {
+          // For date-only events, format in event's timezone
+          let date;
+          if (startTime.match(/^\d{10}$/)) {
+            date = new Date(parseInt(startTime) * 1000);
+          } else if (startTime.match(/^\d{13}$/)) {
+            date = new Date(parseInt(startTime));
+          } else {
+            const [year, month, day] = startTime.split("-").map(Number);
+            date = new Date(year, month - 1, day);
+          }
+
+          shareMessage += `📅 ${formatEventDateTime(
+            date.getTime(),
+            eventTimezone
+          )}${timezoneAbbr}\n`;
+        } else {
+          // For time-based events, format in event's timezone
+          const startDate = new Date(parseInt(startTime) * 1000);
+          const endTime = event.tags.find((tag) => tag[0] === "end")?.[1];
+
+          if (endTime) {
+            const endDate = new Date(parseInt(endTime) * 1000);
+            const startDateTime = formatEventDateTime(
+              startDate.getTime(),
+              eventTimezone,
+              {
+                hour: "numeric",
+                minute: "numeric",
+              }
+            );
+            const endTimeOnly = formatEventTime(
+              endDate.getTime(),
+              eventTimezone
+            );
+            shareMessage += `📅 ${startDateTime} - ${endTimeOnly}${timezoneAbbr}\n`;
+          } else {
+            const startDateTime = formatEventDateTime(
+              startDate.getTime(),
+              eventTimezone,
+              {
+                hour: "numeric",
+                minute: "numeric",
+              }
+            );
+            shareMessage += `📅 ${startDateTime}${timezoneAbbr}\n`;
+          }
+        }
+      }
+
+      if (location) {
+        shareMessage += `📍 ${location}\n`;
+      }
+
+      shareMessage += `\n${event.content}\n\n`;
+
+      // Create the appropriate identifier (naddr for replaceable events, nevent for regular events)
+      shareMessage += `🔗 ${createEventUrl(event, "https://plektos.app")}`;
+
+      await navigator.clipboard.writeText(shareMessage);
+      toast.success("Event message copied to clipboard!");
+    } catch (error) {
+      toast.error("Failed to copy message");
+      console.error("Error copying message:", error);
+    }
+  };
+
   const handleShareEvent = async () => {
     if (!user || !event) return;
 
@@ -522,25 +614,33 @@ export function EventDetail() {
                     event.tags.find((tag) => tag[0] === "title")?.[1] || "Event"
                   }
                 />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => downloadICS(event as DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting)}
-                  className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
-                >
-                  <Calendar className="h-4 w-4" />
-                  Calendar
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleShareEvent}
-                  disabled={isSharing}
-                  className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
-                >
-                  <Share2 className="h-4 w-4" />
-                  {isSharing ? "..." : "Share"}
-                </Button>
+                <CalendarOptions
+                  event={event as DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting}
+                />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isSharing}
+                      className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
+                    >
+                      <Share2 className="h-4 w-4" />
+                      {isSharing ? "..." : "Share"}
+                      <ChevronDown className="h-3 w-3 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleCopyEventUrl}>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy message
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleShareEvent} disabled={!user}>
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Share on Nostr
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
           </div>

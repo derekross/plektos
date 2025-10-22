@@ -12,6 +12,8 @@ import { LocationSearch } from "@/components/LocationSearch";
 import { ImageUpload } from "@/components/ImageUpload";
 import { CategorySelector } from "@/components/CategorySelector";
 import { PaidTicketForm } from "@/components/PaidTicketForm";
+import { EventbriteStyleRecurringForm, type EventbriteRecurringConfig } from "@/components/EventbriteStyleRecurringForm";
+import { RecurringEventPreview } from "@/components/RecurringEventPreview";
 import { EventCategory } from "@/lib/eventCategories";
 import { toast } from "sonner";
 import {
@@ -26,6 +28,8 @@ import {
   getUserTimezone,
   createTimestampInTimezone,
 } from "@/lib/eventTimezone";
+import { encodeGeohash } from "@/lib/geolocation";
+import { generateRecurringEventDates } from "@/lib/recurringEventUtils";
 import { PartyPopper, Target, FileText, Calendar as CalendarIcon, Flag, Clock, Globe, Rocket } from "lucide-react";
 
 export function CreateEvent() {
@@ -56,6 +60,21 @@ export function CreateEvent() {
       lightningAddress: "",
     },
     timezone: getUserTimezone(), // Default to user's timezone
+    eventbriteRecurringConfig: {
+      enabled: false,
+      startDate: "",
+      endDate: "",
+      repeatEvery: 1,
+      repeatUnit: 'week' as const,
+      repeatOnDays: [1], // Monday by default
+      monthlyPattern: 'day' as const,
+      monthlyWeek: 1,
+      monthlyWeekday: 1,
+      timeMode: 'single' as const,
+      timeSlots: [{ id: '1', startTime: '19:00', endTime: '22:00' }],
+      endType: 'occurrences' as const,
+      maxOccurrences: 1,
+    } as EventbriteRecurringConfig,
   });
 
 
@@ -86,8 +105,26 @@ export function CreateEvent() {
       return;
     }
 
+    // Validate Eventbrite-style recurring configuration
+    if (formData.eventbriteRecurringConfig.enabled) {
+      // Use main form dates for recurring events
+      if (!formData.startDate) {
+        toast.error("Start date is required for recurring events");
+        return;
+      }
+      if (!formData.endDate) {
+        toast.error("End date is required for recurring events");
+        return;
+      }
+      if (formData.eventbriteRecurringConfig.repeatUnit === 'week' && formData.eventbriteRecurringConfig.repeatOnDays.length === 0) {
+        toast.error("Please select at least one day of the week");
+        return;
+      }
+    }
+
     console.log("Form data at submission:", {
       imageUrl: formData.imageUrl,
+      eventbriteRecurringConfig: formData.eventbriteRecurringConfig,
     });
 
     setIsSubmitting(true);
@@ -103,122 +140,206 @@ export function CreateEvent() {
         startTime: formData.startTime,
         endDate: formData.endDate,
         endTime: formData.endTime,
-        timezone: formData.timezone
+        timezone: formData.timezone,
+        recurringEnabled: formData.eventbriteRecurringConfig.enabled
       });
 
-      // Format start and end timestamps based on event kind
-      let startTimestamp: string;
-      let endTimestamp: string | undefined;
-
-      if (hasTime) {
-        // For time-based events (kind 31923), use Unix timestamps with specific times
-        if (formData.startTime) {
-          startTimestamp = createTimestampInTimezone(
-            formData.startDate,
-            formData.startTime,
-            formData.timezone
-          ).toString();
-        } else {
-          startTimestamp = Math.floor(
-            new Date(formData.startDate + "T00:00:00").getTime() / 1000
-          ).toString();
-        }
-
-        if (formData.endTime) {
-          endTimestamp = createTimestampInTimezone(
-            formData.endDate,
-            formData.endTime,
-            formData.timezone
-          ).toString();
-        } else {
-          endTimestamp = Math.floor(
-            new Date(formData.endDate + "T00:00:00").getTime() / 1000
-          ).toString();
-        }
-      } else {
-        // For date-only events (kind 31922), use YYYY-MM-DD format as per NIP-52
-        startTimestamp = formData.startDate; // Already in YYYY-MM-DD format
-        endTimestamp = formData.endDate; // Already in YYYY-MM-DD format
-      }
-
-      // Create a unique identifier for the event
-      const uniqueId = formData.title.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now();
-      
-      const tags = [
-        ["d", uniqueId], // Unique identifier
-        ["title", formData.title],
-        ["description", formData.description],
-        ["location", formData.location],
-      ];
-
-      // Add location details if available
-      if (formData.locationDetails.placeId) {
-        tags.push(
-          [
-            "g",
-            `${formData.locationDetails.lat},${formData.locationDetails.lng}`,
-          ],
-          ["place_id", formData.locationDetails.placeId]
-        );
-      }
-
-      // Add start and end timestamps
-      tags.push(["start", startTimestamp]);
-      if (endTimestamp) {
-        tags.push(["end", endTimestamp]);
-      }
-
-      // Add timezone tags only for time-based events (kind 31923)
-      if (hasTime) {
-        tags.push(["start_tzid", formData.timezone]);
-        if (endTimestamp) {
-          tags.push(["end_tzid", formData.timezone]);
-        }
-      }
-
-      // Add image URL if provided
-      if (formData.imageUrl) {
-        console.log("Adding image to event:", {
-          imageUrl: formData.imageUrl,
-        });
-        // Add the image tag
-        tags.push(["image", formData.imageUrl]);
-      }
-
-      // Add categories as 't' tags if provided
-      if (formData.categories.length > 0) {
-        for (const category of formData.categories) {
-          tags.push(["t", category]);
-        }
-      }
-
-      // Add ticket information if enabled
-      if (formData.ticketInfo.enabled) {
-        tags.push(
-          ["price", formData.ticketInfo.price.toString()],
-          ["lud16", formData.ticketInfo.lightningAddress]
-        );
-      }
-
-      createEvent({
-        kind: eventKind,
-        content: formData.description,
-        tags,
-      }, {
-        onSuccess: (event) => {
-          toast.success("Event created successfully! It should appear on the home page shortly.");
-          console.log("Event created with ID:", event.id);
+      // Generate recurring event dates if enabled
+      let eventDates;
+      try {
+        if (formData.eventbriteRecurringConfig.enabled) {
+          // Use Eventbrite-style config
+          const recurringConfig = {
+            enabled: true,
+            pattern: (formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' : 
+                     formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly') as 'daily' | 'weekly' | 'monthly',
+            interval: formData.eventbriteRecurringConfig.repeatEvery,
+            maxOccurrences: formData.eventbriteRecurringConfig.maxOccurrences || 6,
+            weeklyDays: formData.eventbriteRecurringConfig.repeatOnDays,
+            monthlyWeekday: formData.eventbriteRecurringConfig.monthlyPattern === 'weekday' ? {
+              week: formData.eventbriteRecurringConfig.monthlyWeek || 1,
+              day: formData.eventbriteRecurringConfig.monthlyWeekday || 1
+            } : undefined,
+            timeMode: formData.eventbriteRecurringConfig.timeMode,
+          };
           
-          // Navigate back to home page where the user can see their new event
-          navigate("/");
-          setIsSubmitting(false);
-        },
-        onError: (error) => {
-          toast.error("Failed to create event");
-          console.error("Error creating event:", error);
-          setIsSubmitting(false);
+          eventDates = generateRecurringEventDates(
+            formData.startDate,
+            formData.endDate,
+            recurringConfig,
+            formData.startTime,
+            formData.endTime
+          );
+        } else {
+          // Use regular form data
+          const regularConfig = {
+            enabled: false,
+            pattern: 'daily' as const,
+            interval: 1,
+            maxOccurrences: 1,
+            timeMode: 'single' as const,
+          };
+          
+          eventDates = generateRecurringEventDates(
+            formData.startDate,
+            formData.endDate,
+            regularConfig,
+            formData.startTime,
+            formData.endTime
+          );
         }
+      } catch (error) {
+        console.error('Error generating recurring event dates:', error);
+        toast.error("Error generating recurring events. Please check your configuration.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      console.log("Generated event dates:", eventDates);
+
+      // Create events for each date
+      const createEventPromises = eventDates.map(async (eventDate, index) => {
+        // Format start and end timestamps based on event kind
+        let startTimestamp: string;
+        let endTimestamp: string | undefined;
+
+        if (hasTime) {
+          // For time-based events (kind 31923), use Unix timestamps with specific times
+          if (eventDate.startTime) {
+            startTimestamp = createTimestampInTimezone(
+              eventDate.startDate,
+              eventDate.startTime,
+              formData.timezone
+            ).toString();
+          } else {
+            startTimestamp = Math.floor(
+              new Date(eventDate.startDate + "T00:00:00").getTime() / 1000
+            ).toString();
+          }
+
+          if (eventDate.endTime) {
+            endTimestamp = createTimestampInTimezone(
+              eventDate.endDate,
+              eventDate.endTime,
+              formData.timezone
+            ).toString();
+          } else {
+            endTimestamp = Math.floor(
+              new Date(eventDate.endDate + "T00:00:00").getTime() / 1000
+            ).toString();
+          }
+        } else {
+          // For date-only events (kind 31922), use YYYY-MM-DD format as per NIP-52
+          startTimestamp = eventDate.startDate; // Already in YYYY-MM-DD format
+          endTimestamp = eventDate.endDate; // Already in YYYY-MM-DD format
+        }
+
+        // Create a unique identifier for the event
+        const uniqueId = formData.title.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now() + "-" + index;
+      
+        const tags = [
+          ["d", uniqueId], // Unique identifier
+          ["title", formData.title],
+          ["description", formData.description],
+          ["location", formData.location],
+        ];
+
+        // Add location details if available
+        if (formData.locationDetails.lat && formData.locationDetails.lng) {
+          // Encode coordinates as geohash (NIP-52)
+          const geohash = encodeGeohash(
+            formData.locationDetails.lat,
+            formData.locationDetails.lng,
+            9 // 9 characters gives ~4.8m precision
+          );
+          tags.push(["g", geohash]);
+          
+          // Also store raw coordinates for backwards compatibility
+          tags.push(["lat", formData.locationDetails.lat.toString()]);
+          tags.push(["lon", formData.locationDetails.lng.toString()]);
+          
+          if (formData.locationDetails.placeId) {
+            tags.push(["place_id", formData.locationDetails.placeId]);
+          }
+        }
+
+        // Add start and end timestamps
+        tags.push(["start", startTimestamp]);
+        if (endTimestamp) {
+          tags.push(["end", endTimestamp]);
+        }
+
+        // Add timezone tags only for time-based events (kind 31923)
+        if (hasTime) {
+          tags.push(["start_tzid", formData.timezone]);
+          if (endTimestamp) {
+            tags.push(["end_tzid", formData.timezone]);
+          }
+        }
+
+        // Add image URL if provided
+        if (formData.imageUrl) {
+          console.log("Adding image to event:", {
+            imageUrl: formData.imageUrl,
+          });
+          // Add the image tag
+          tags.push(["image", formData.imageUrl]);
+        }
+
+        // Add categories as 't' tags if provided
+        if (formData.categories.length > 0) {
+          for (const category of formData.categories) {
+            tags.push(["t", category]);
+          }
+        }
+
+        // Add ticket information if enabled
+        if (formData.ticketInfo.enabled) {
+          tags.push(
+            ["price", formData.ticketInfo.price.toString()],
+            ["lud16", formData.ticketInfo.lightningAddress]
+          );
+        }
+
+        // Add recurring event information if this is part of a series
+        if (formData.eventbriteRecurringConfig.enabled && eventDates.length > 1) {
+          tags.push(["recurring", "true"]);
+          tags.push(["series_id", formData.title.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now()]);
+          tags.push(["series_index", index.toString()]);
+          tags.push(["series_total", eventDates.length.toString()]);
+        }
+
+        return createEvent({
+          kind: eventKind,
+          content: formData.description,
+          tags,
+        });
       });
+
+      // Wait for all events to be created
+      const results = await Promise.allSettled(createEventPromises);
+      
+      const successful = results.filter(result => result.status === 'fulfilled').length;
+      const failed = results.filter(result => result.status === 'rejected').length;
+
+      if (successful > 0) {
+        if (formData.eventbriteRecurringConfig.enabled && eventDates.length > 1) {
+          toast.success(`Successfully created ${successful} recurring events! They should appear on the home page shortly.`);
+        } else {
+          toast.success("Event created successfully! It should appear on the home page shortly.");
+        }
+        
+        if (failed > 0) {
+          toast.warning(`${failed} events failed to create. Please try again.`);
+        }
+        
+        // Navigate back to home page where the user can see their new events
+        navigate("/");
+      } else {
+        toast.error("Failed to create events. Please try again.");
+      }
+      
+      setIsSubmitting(false);
     } catch (error) {
       toast.error("Failed to create event");
       console.error("Error creating event:", error);
@@ -466,6 +587,49 @@ export function CreateEvent() {
             setFormData((prev) => ({ ...prev, ticketInfo }))
           }
         />
+
+        {/* Eventbrite-Style Recurring Event Form */}
+        <EventbriteStyleRecurringForm
+          config={{
+            ...formData.eventbriteRecurringConfig,
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+            timeSlots: [{
+              id: '1',
+              startTime: formData.startTime || '19:00',
+              endTime: formData.endTime || '22:00'
+            }]
+          }}
+          onChange={(eventbriteRecurringConfig) =>
+            setFormData((prev) => ({ ...prev, eventbriteRecurringConfig }))
+          }
+        />
+
+        {formData.eventbriteRecurringConfig.enabled && formData.startDate && formData.endDate && (
+          <RecurringEventPreview
+            title={formData.title}
+            description={formData.description}
+            location={formData.location}
+            startDate={formData.startDate}
+            endDate={formData.endDate}
+            startTime={formData.startTime}
+            endTime={formData.endTime}
+            timezone={formData.timezone}
+            recurringConfig={{
+              enabled: true,
+              pattern: formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' : 
+                       formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly',
+              interval: formData.eventbriteRecurringConfig.repeatEvery,
+              maxOccurrences: formData.eventbriteRecurringConfig.maxOccurrences || 6,
+              weeklyDays: formData.eventbriteRecurringConfig.repeatOnDays,
+              monthlyWeekday: formData.eventbriteRecurringConfig.monthlyPattern === 'weekday' ? {
+                week: formData.eventbriteRecurringConfig.monthlyWeek || 1,
+                day: formData.eventbriteRecurringConfig.monthlyWeekday || 1
+              } : undefined,
+              timeMode: formData.eventbriteRecurringConfig.timeMode,
+            }}
+          />
+        )}
 
         <div className="flex justify-center pt-6">
           <Button 

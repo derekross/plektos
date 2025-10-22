@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Search, Plus, Ticket, User, Heart } from "lucide-react";
+import { Search, Plus, Ticket, User, Heart, QrCode } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { LoginArea } from "@/components/auth/LoginArea";
@@ -78,6 +78,13 @@ export function AppNavigation({ children }: AppNavigationProps) {
       label: "Tickets",
       icon: Ticket,
       isActive: location.pathname === "/tickets",
+      requireAuth: true,
+    },
+    {
+      href: "/verify-ticket",
+      label: "Verify Tickets",
+      icon: QrCode,
+      isActive: location.pathname === "/verify-ticket",
       requireAuth: true,
     },
   ];
