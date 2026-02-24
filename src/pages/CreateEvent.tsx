@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useNostrPublish } from "@/hooks/useNostrPublish";
 import { Button } from "@/components/ui/button";
@@ -30,10 +30,12 @@ import {
 } from "@/lib/eventTimezone";
 import { encodeGeohash } from "@/lib/geolocation";
 import { generateRecurringEventDates } from "@/lib/recurringEventUtils";
-import { PartyPopper, Target, FileText, Calendar as CalendarIcon, Flag, Clock, Globe, Rocket } from "lucide-react";
-
+import { useUserCalendars, createCoordinate } from "@/lib/calendarUtils";
+import { PartyPopper, Target, FileText, Calendar as CalendarIcon, Flag, Clock, Globe, Rocket, CalendarDays } from "lucide-react";
 export function CreateEvent() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const preselectedCalendar = searchParams.get("calendar");
   const { user } = useCurrentUser();
   const { mutate: createEvent } = useNostrPublish();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,6 +55,7 @@ export function CreateEvent() {
     endDate: "",
     endTime: "",
     imageUrl: "",
+    selectedCalendarCoordinate: preselectedCalendar || "",
     categories: [] as EventCategory[],
     ticketInfo: {
       enabled: false,
@@ -77,7 +80,7 @@ export function CreateEvent() {
     } as EventbriteRecurringConfig,
   });
 
-
+  const { data: userCalendars = [], isLoading: isLoadingCalendars } = useUserCalendars(user?.pubkey);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,8 +154,8 @@ export function CreateEvent() {
           // Use Eventbrite-style config
           const recurringConfig = {
             enabled: true,
-            pattern: (formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' : 
-                     formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly') as 'daily' | 'weekly' | 'monthly',
+            pattern: (formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' :
+              formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly') as 'daily' | 'weekly' | 'monthly',
             interval: formData.eventbriteRecurringConfig.repeatEvery,
             maxOccurrences: formData.eventbriteRecurringConfig.maxOccurrences || 6,
             weeklyDays: formData.eventbriteRecurringConfig.repeatOnDays,
@@ -162,7 +165,7 @@ export function CreateEvent() {
             } : undefined,
             timeMode: formData.eventbriteRecurringConfig.timeMode,
           };
-          
+
           eventDates = generateRecurringEventDates(
             formData.startDate,
             formData.endDate,
@@ -179,7 +182,7 @@ export function CreateEvent() {
             maxOccurrences: 1,
             timeMode: 'single' as const,
           };
-          
+
           eventDates = generateRecurringEventDates(
             formData.startDate,
             formData.endDate,
@@ -236,7 +239,7 @@ export function CreateEvent() {
 
         // Create a unique identifier for the event
         const uniqueId = formData.title.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now() + "-" + index;
-      
+
         const tags = [
           ["d", uniqueId], // Unique identifier
           ["title", formData.title],
@@ -253,11 +256,11 @@ export function CreateEvent() {
             9 // 9 characters gives ~4.8m precision
           );
           tags.push(["g", geohash]);
-          
+
           // Also store raw coordinates for backwards compatibility
           tags.push(["lat", formData.locationDetails.lat.toString()]);
           tags.push(["lon", formData.locationDetails.lng.toString()]);
-          
+
           if (formData.locationDetails.placeId) {
             tags.push(["place_id", formData.locationDetails.placeId]);
           }
@@ -284,6 +287,11 @@ export function CreateEvent() {
           });
           // Add the image tag
           tags.push(["image", formData.imageUrl]);
+        }
+
+        // Associate with Calendar if selected
+        if (formData.selectedCalendarCoordinate) {
+          tags.push(["a", formData.selectedCalendarCoordinate]);
         }
 
         // Add categories as 't' tags if provided
@@ -318,7 +326,7 @@ export function CreateEvent() {
 
       // Wait for all events to be created
       const results = await Promise.allSettled(createEventPromises);
-      
+
       const successful = results.filter(result => result.status === 'fulfilled').length;
       const failed = results.filter(result => result.status === 'rejected').length;
 
@@ -328,17 +336,17 @@ export function CreateEvent() {
         } else {
           toast.success("Event created successfully! It should appear on the home page shortly.");
         }
-        
+
         if (failed > 0) {
           toast.warning(`${failed} events failed to create. Please try again.`);
         }
-        
+
         // Navigate back to home page where the user can see their new events
         navigate("/");
       } else {
         toast.error("Failed to create events. Please try again.");
       }
-      
+
       setIsSubmitting(false);
     } catch (error) {
       toast.error("Failed to create event");
@@ -439,6 +447,32 @@ export function CreateEvent() {
             setFormData((prev) => ({ ...prev, categories }))
           }
         />
+
+        {userCalendars.length > 0 && (
+          <div className="space-y-3">
+            <Label className="text-lg font-semibold flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-primary" /> Add to Calendar (Optional)
+            </Label>
+            <Select
+              value={formData.selectedCalendarCoordinate}
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, selectedCalendarCoordinate: value === "none" ? "" : value }))
+              }
+            >
+              <SelectTrigger className="rounded-2xl border-2 py-3">
+                <SelectValue placeholder="Select a community calendar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {userCalendars.map((cal) => (
+                  <SelectItem key={cal.id} value={createCoordinate(31924, cal.pubkey, cal.d)}>
+                    {cal.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
@@ -617,8 +651,8 @@ export function CreateEvent() {
             timezone={formData.timezone}
             recurringConfig={{
               enabled: true,
-              pattern: formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' : 
-                       formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly',
+              pattern: formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' :
+                formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly',
               interval: formData.eventbriteRecurringConfig.repeatEvery,
               maxOccurrences: formData.eventbriteRecurringConfig.maxOccurrences || 6,
               weeklyDays: formData.eventbriteRecurringConfig.repeatOnDays,
@@ -632,8 +666,8 @@ export function CreateEvent() {
         )}
 
         <div className="flex justify-center pt-6">
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             disabled={isSubmitting}
             className="px-12 py-4 text-lg font-semibold rounded-2xl bg-party-gradient hover:opacity-90 transition-all duration-200 hover:scale-105 shadow-lg"
           >

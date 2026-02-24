@@ -75,6 +75,34 @@ function getStatusLabel(status: string) {
   }
 }
 
+function LinkifiedText({ text }: { text: string }) {
+  if (!text) return null;
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.match(urlRegex)) {
+          return (
+            <a
+              key={i}
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {part}
+            </a>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 function EventAuthor({ pubkey }: { pubkey: string }) {
   const author = useAuthor(pubkey);
   const metadata = author.data?.metadata;
@@ -139,8 +167,8 @@ export function EventDetail() {
           decodedEvent.type === "raw"
             ? decodedEvent.data
             : decodedEvent.type === "note"
-            ? decodedEvent.data
-            : decodedEvent.data.id;
+              ? decodedEvent.data
+              : decodedEvent.data.id;
         eventIdFromIdentifier = eventIdDecoded;
       }
     } catch (error) {
@@ -354,8 +382,8 @@ export function EventDetail() {
             <div className="space-y-1 sm:space-y-2">
               <CardTitle className="flex items-center gap-2">
                 {isLiveEventType(event) && getPlatformIcon(event) && (
-                  <span 
-                    className="text-2xl flex-shrink-0" 
+                  <span
+                    className="text-2xl flex-shrink-0"
                     title={`Live on ${getPlatformIcon(event)?.name}`}
                   >
                     {getPlatformIcon(event)?.icon}
@@ -394,7 +422,9 @@ export function EventDetail() {
         <CardContent className="p-3 sm:p-6 space-y-3 sm:space-y-4">
           <div>
             <h3 className="font-semibold flex items-center gap-2">📝 Description</h3>
-            <p className="text-muted-foreground whitespace-pre-wrap break-words">{event.content}</p>
+            <div className="text-muted-foreground whitespace-pre-wrap break-words">
+              <LinkifiedText text={event.content || ""} />
+            </div>
           </div>
 
           <EventCategories
@@ -424,8 +454,8 @@ export function EventDetail() {
                 <div className="flex items-center gap-2">
                   <Badge className={cn(
                     "px-3 py-1 rounded-full text-sm font-semibold",
-                    event.kind === 30311 && getLiveEventStatus(event as LiveEvent) === 'live' 
-                      ? "bg-red-500 text-white animate-pulse" 
+                    event.kind === 30311 && getLiveEventStatus(event as LiveEvent) === 'live'
+                      ? "bg-red-500 text-white animate-pulse"
                       : "bg-blue-500 text-white"
                   )}>
                     {event.kind === 30311 && getLiveEventStatus(event as LiveEvent) === 'live' ? (
@@ -446,7 +476,7 @@ export function EventDetail() {
                     </Badge>
                   )}
                 </div>
-                
+
                 {getViewingUrl(event) && (
                   <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800">
                     <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">
@@ -475,7 +505,7 @@ export function EventDetail() {
                     </div>
                   </div>
                 )}
-                
+
                 {event.kind === 30311 && (
                   <div className="text-sm text-muted-foreground">
                     <p>This is a NIP-53 live event. Join the stream using the URL above or check the event description for more details.</p>
