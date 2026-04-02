@@ -13,6 +13,7 @@ const TestNotifications = lazy(() => import("@/pages/TestNotifications").then(m 
 const VerifyTicket = lazy(() => import("@/pages/VerifyTicket").then(m => ({ default: m.VerifyTicket })));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicy })));
 const RemoteLoginSuccess = lazy(() => import("@/pages/RemoteLoginSuccess").then(m => ({ default: m.RemoteLoginSuccess })));
+const NotFound = lazy(() => import("@/pages/NotFound"));
 
 function PageFallback() {
   return (
@@ -38,6 +39,9 @@ export default function AppRouter() {
         <Route path="/verify-ticket" element={<VerifyTicket />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/remoteloginsuccess" element={<RemoteLoginSuccess />} />
+        {/* Support bare NIP-19 identifiers (naddr1..., nevent1..., note1...) as top-level URLs */}
+        <Route path="/:eventId" element={<EventDetail />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
   );
