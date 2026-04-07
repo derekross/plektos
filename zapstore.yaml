@@ -3,10 +3,14 @@ name: Plektos
 summary: Nostr calendar app for events and scheduling
 description: Plektos is a Nostr-powered calendar application for creating and discovering events. Create personal calendars, RSVP to community events, and sync your schedule across the Nostr network. Features NIP-46 remote signer support for secure authentication.
 repository: https://github.com/derekross/plektos
-homepage: https://plektos.app
+website: https://plektos.app
 icon: ./public/plektos.png
-tags: nostr calendar events scheduling freedom-tech
+tags:
+  - nostr
+  - calendar
+  - events
+  - scheduling
+  - freedom-tech
 license: MIT
 builder: npub18ams6ewn5aj2n3wt2qawzglx9mr4nzksxhvrdc4gzrecw7n5tvjqctp424
-assets:
-  - ./android/app/build/outputs/apk/release/app-release.apk
+release_source: ./android/app/build/outputs/apk/release/app-release.apk
