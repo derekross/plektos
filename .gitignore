@@ -22,6 +22,11 @@ dist-ssr
 *.sw?
 test-build
 
+# Secrets
+.env
+.env.*
+!.env.example
+
 # Capacitor Android
 android/keystore.properties
 android/*.jks
