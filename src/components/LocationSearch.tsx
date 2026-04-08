@@ -97,8 +97,8 @@ export function LocationSearch({
           >
             <div className="flex-1 min-w-0">
               {value ? (
-                <span 
-                  className="truncate block text-sm" 
+                <span
+                  className="truncate block text-sm"
                   title={value}
                 >
                   {value}
@@ -116,7 +116,7 @@ export function LocationSearch({
           className="w-[--radix-popover-trigger-width] p-0 max-w-[90vw]"
           align="start"
         >
-          <Command>
+          <Command shouldFilter={false}>
             <CommandInput
               placeholder="Search locations..."
               value={value}

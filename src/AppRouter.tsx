@@ -6,6 +6,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 // Lazy-loaded pages: only downloaded when the user navigates to them
 const EventDetail = lazy(() => import("@/pages/EventDetail").then(m => ({ default: m.EventDetail })));
 const CreateEvent = lazy(() => import("@/pages/CreateEvent").then(m => ({ default: m.CreateEvent })));
+const CreateCalendar = lazy(() => import("@/pages/CreateCalendar").then(m => ({ default: m.CreateCalendar })));
+const EditCalendar = lazy(() => import("@/pages/EditCalendar").then(m => ({ default: m.EditCalendar })));
+const CalendarView = lazy(() => import("@/pages/CalendarView").then(m => ({ default: m.CalendarView })));
 const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
 const MyTickets = lazy(() => import("@/pages/MyTickets").then(m => ({ default: m.MyTickets })));
 const SocialFeed = lazy(() => import("@/pages/SocialFeed").then(m => ({ default: m.SocialFeed })));
@@ -32,6 +35,9 @@ export default function AppRouter() {
         <Route path="/" element={<Home />} />
         <Route path="/event/:eventId" element={<EventDetail />} />
         <Route path="/create" element={<CreateEvent />} />
+        <Route path="/create-calendar" element={<CreateCalendar />} />
+        <Route path="/edit-calendar/:naddr" element={<EditCalendar />} />
+        <Route path="/calendar/:naddr" element={<CalendarView />} />
         <Route path="/profile/:npub" element={<Profile />} />
         <Route path="/tickets" element={<MyTickets />} />
         <Route path="/feed" element={<SocialFeed />} />

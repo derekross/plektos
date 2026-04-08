@@ -115,16 +115,35 @@ export function useEvents(options?: {
         const events = await nostr.query(filters, { signal });
 
         if (!events || events.length === 0) {
+          // If no new events, just use the cache
+          const [cachedEvents, cachedRsvps] = await Promise.all([
+            getCachedEvents(),
+            includeRSVPs ? getCachedRSVPs() : Promise.resolve([]),
+          ]);
+
+          if (cachedEvents.length > 0 || cachedRsvps.length > 0) {
+            const allCached = [...cachedEvents, ...cachedRsvps] as AllEventTypes[];
+            return deduplicateEvents(allCached);
+          }
           return [];
         }
 
         const typedEvents = events as unknown as AllEventTypes[];
-        const result = deduplicateEvents(typedEvents);
 
-        // Cache events in background (non-blocking)
-        Promise.all(result.map(event => cacheEvent(event))).catch(() => {});
+        // Cache new events in background (non-blocking)
+        Promise.all(typedEvents.map(event => cacheEvent(event))).catch(() => { });
 
-        return result;
+        // Fetch current cache to merge with new events
+        const [cachedEvents, cachedRsvps] = await Promise.all([
+          getCachedEvents(),
+          includeRSVPs ? getCachedRSVPs() : Promise.resolve([]),
+        ]);
+
+        // Merge and deduplicate
+        const allCached = [...cachedEvents, ...cachedRsvps] as AllEventTypes[];
+        const combined = [...allCached, ...typedEvents];
+
+        return deduplicateEvents(combined);
       } catch {
         return [];
       }

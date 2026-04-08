@@ -21,7 +21,8 @@ import { Link } from "react-router-dom";
 import { UserActionsMenu } from "@/components/UserActionsMenu";
 import { ZappableLightningAddress } from "@/components/ZappableLightningAddress";
 import { EditProfileForm } from "@/components/EditProfileForm";
-import { ExternalLink, Loader2, Settings, PartyPopper, Users } from "lucide-react";
+import { ExternalLink, Loader2, Settings, PartyPopper, Users, CalendarDays, Plus } from "lucide-react";
+import { useUserCalendars } from "@/lib/calendarUtils";
 import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 import type {
   DateBasedEvent,
@@ -41,9 +42,14 @@ export function Profile() {
   useEffect(() => {
     try {
       if (npub) {
-        const decoded = nip19.decode(npub);
-        if (decoded.type === "npub") {
-          setPubkey(decoded.data);
+        if (npub.startsWith("npub1")) {
+          const decoded = nip19.decode(npub);
+          if (decoded.type === "npub") {
+            setPubkey(decoded.data);
+          }
+        } else if (npub.length === 64) {
+          // Fallback if a raw hex string was passed instead of an encoded npub
+          setPubkey(npub);
         }
       }
     } catch (error) {
@@ -93,6 +99,24 @@ export function Profile() {
     staleTime: 30000,
   });
 
+  const {
+    data: receivedRsvps = [],
+    isLoading: isLoadingReceivedRsvps,
+  } = useQuery({
+    queryKey: ["receivedRsvps", pubkey],
+    queryFn: async ({ signal }) => {
+      if (!pubkey) return [];
+      const events = await nostr.query(
+        [{ kinds: [31925], "#p": [pubkey] }],
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]) }
+      );
+      return events as unknown as EventRSVP[];
+    },
+    enabled: !!pubkey,
+    retry: 1,
+    staleTime: 30000,
+  });
+
   // Fetch the actual events that were RSVP'd to
   const {
     data: rsvpEvents = [],
@@ -116,6 +140,11 @@ export function Profile() {
     retry: 1,
     staleTime: 30000,
   });
+
+  const {
+    data: userCalendars = [],
+    isLoading: isLoadingCalendars,
+  } = useUserCalendars(pubkey);
 
   const metadata = author.data?.metadata;
   const displayName =
@@ -258,6 +287,83 @@ export function Profile() {
               </a>
             </div>
           )}
+
+          {/* Stats section */}
+          {!author.isLoading && !isLoadingCreated && (
+            <div className="flex flex-wrap gap-4 sm:gap-8 mt-4">
+              <div className="flex flex-col bg-muted/30 p-3 sm:p-4 rounded-2xl flex-1 items-center justify-center min-w-[100px] shadow-sm">
+                <span className="text-2xl sm:text-3xl font-bold text-primary">{createdEvents.length}</span>
+                <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest font-bold text-center mt-1">Total Events</span>
+              </div>
+              <div className="flex flex-col bg-muted/30 p-3 sm:p-4 rounded-2xl flex-1 items-center justify-center min-w-[100px] shadow-sm">
+                <span className="text-2xl sm:text-3xl font-bold text-primary">
+                  {createdEvents.filter((event) => {
+                    const startTag = event.tags.find((t) => t[0] === "start")?.[1];
+                    if (!startTag) return false;
+
+                    try {
+                      let startTimeMs = 0;
+                      if (event.kind === 31922) {
+                        // YYYY-MM-DD
+                        startTimeMs = new Date(startTag).getTime();
+                      } else if (event.kind === 31923) {
+                        // Unix timestamp in seconds
+                        startTimeMs = parseInt(startTag) * 1000;
+                      }
+
+                      // For current/upcoming events, we check if start time is in the future
+                      // Note: We could also check end time if available to include ongoing events
+                      const endTag = event.tags.find((t) => t[0] === "end")?.[1];
+                      if (endTag) {
+                        let endTimeMs = 0;
+                        if (event.kind === 31922) {
+                          endTimeMs = new Date(endTag).getTime();
+                        } else if (event.kind === 31923) {
+                          endTimeMs = parseInt(endTag) * 1000;
+                        }
+                        // If end time is in future or today
+                        return endTimeMs >= Date.now();
+                      }
+
+                      // If no end time, we consider it current if it's within the last 24h or in the future
+                      // Just subtracting 24h as a rough buffer for ongoing "day of" events
+                      return startTimeMs >= Date.now() - 24 * 60 * 60 * 1000;
+                    } catch (e) {
+                      return false;
+                    }
+                  }).length}
+                </span>
+                <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest font-bold text-center mt-1">Current Events</span>
+              </div>
+              <div className="flex flex-col bg-muted/30 p-3 sm:p-4 rounded-2xl flex-1 items-center justify-center min-w-[100px] shadow-sm">
+                {isLoadingRSVPs ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground my-1" />
+                ) : (
+                  <span className="text-2xl sm:text-3xl font-bold text-primary">
+                    {rsvps.filter(r => r.tags.find(t => t[0] === "status")?.[1] === "accepted").length}
+                  </span>
+                )}
+                <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest font-bold text-center mt-1">Attending</span>
+              </div>
+              <div className="flex flex-col bg-muted/30 p-3 sm:p-4 rounded-2xl flex-1 items-center justify-center min-w-[100px] shadow-sm">
+                {isLoadingReceivedRsvps ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground my-1" />
+                ) : (
+                  <span className="text-2xl sm:text-3xl font-bold text-primary">
+                    {
+                      // Filter down to accepted RSVPs and get unique pubkeys
+                      Array.from(new Set(
+                        receivedRsvps
+                          .filter(r => r.tags.find(t => t[0] === "status")?.[1] === "accepted")
+                          .map(r => r.pubkey)
+                      )).length
+                    }
+                  </span>
+                )}
+                <span className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-widest font-bold text-center mt-1">Total Attendees</span>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -266,9 +372,10 @@ export function Profile() {
 
       {/* Events Section: Tabs for Created and RSVP'd Events */}
       <Tabs defaultValue="created" className="w-full">
-        <TabsList className="flex gap-2 mb-6">
+        <TabsList className="flex flex-wrap gap-2 mb-6">
           <TabsTrigger value="created" className="flex items-center gap-2"><PartyPopper className="h-5 w-5 text-primary" /> Created Events</TabsTrigger>
           <TabsTrigger value="rsvpd" className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" /> RSVP'd Events</TabsTrigger>
+          <TabsTrigger value="calendars" className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-primary" /> My Calendars</TabsTrigger>
         </TabsList>
         <TabsContent value="created">
           {isLoadingCreated ? (
@@ -325,6 +432,65 @@ export function Profile() {
                   </Link>
                 );
               })}
+            </div>
+          )}
+        </TabsContent>
+        <TabsContent value="calendars">
+          {isLoadingCalendars ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Loading calendars...</span>
+            </div>
+          ) : userCalendars.length === 0 ? (
+            <div className="text-center py-12 px-4 rounded-xl border-2 border-dashed bg-muted/20">
+              <CalendarDays className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+              <h3 className="text-lg font-medium text-foreground mb-1">No Calendars Yet</h3>
+              <p className="text-muted-foreground mb-4">You haven't created any group calendars yet.</p>
+              {isOwnProfile && (
+                <Button asChild>
+                  <Link to="/create-calendar">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Calendar
+                  </Link>
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {isOwnProfile && (
+                <div className="flex justify-end">
+                  <Button asChild variant="outline">
+                    <Link to="/create-calendar">
+                      <Plus className="h-4 w-4 mr-2" />
+                      New Calendar
+                    </Link>
+                  </Button>
+                </div>
+              )}
+              <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                {userCalendars.map((cal) => (
+                  <Link to={`/calendar/${cal.pubkey}:${cal.d}`} key={cal.id}>
+                    <Card className="h-full transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/20 overflow-hidden rounded-none sm:rounded-3xl border-2 border-transparent hover:border-primary/20 group">
+                      <div className="aspect-video w-full overflow-hidden relative bg-muted">
+                        <img
+                          src={cal.image || "/default-calendar.png"}
+                          alt={cal.title}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-100 transition-opacity duration-300" />
+                        <div className="absolute bottom-4 left-4 right-4">
+                          <h3 className="text-white font-bold text-lg line-clamp-1">{cal.title}</h3>
+                        </div>
+                      </div>
+                      <CardContent className="p-4 sm:p-6">
+                        <p className="line-clamp-2 text-sm text-muted-foreground leading-relaxed">
+                          {cal.description || "No description provided."}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
         </TabsContent>
@@ -385,15 +551,15 @@ export function Profile() {
                               status === "accepted"
                                 ? "bg-green-500/10 text-green-500"
                                 : status === "tentative"
-                                ? "bg-yellow-500/10 text-yellow-500"
-                                : "bg-red-500/10 text-red-500"
+                                  ? "bg-yellow-500/10 text-yellow-500"
+                                  : "bg-red-500/10 text-red-500"
                             }
                           >
                             {status === "accepted"
                               ? "Going"
                               : status === "tentative"
-                              ? "Maybe"
-                              : "Can't Go"}
+                                ? "Maybe"
+                                : "Can't Go"}
                           </Badge>
                         </div>
                       </CardHeader>
