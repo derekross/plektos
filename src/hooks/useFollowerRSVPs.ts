@@ -2,7 +2,7 @@ import { useNostr } from "@nostrify/react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useFollowList } from "@/hooks/useFollowList";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type { EventRSVP, DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting, InteractiveRoom } from "@/lib/eventTypes";
 
 export interface FollowerRSVPActivity {
@@ -23,6 +23,16 @@ export function useFollowerRSVPs() {
   const { user } = useCurrentUser();
   const { followedPubkeys, isLoading: isLoadingFollows } = useFollowList();
 
+  // Create a stable query key string to prevent refetches on reference changes
+  const followedKeyString = useMemo(
+    () => [...followedPubkeys].sort().join(","),
+    [followedPubkeys]
+  );
+
+  // Keep a stable reference to the pubkeys array for the query function
+  const followedPubkeysRef = useRef(followedPubkeys);
+  followedPubkeysRef.current = followedPubkeys;
+
   const {
     data,
     isLoading: isLoadingRSVPs,
@@ -32,9 +42,10 @@ export function useFollowerRSVPs() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["followerRSVPs", followedPubkeys],
+    queryKey: ["followerRSVPs", followedKeyString],
     queryFn: async ({ pageParam, signal }) => {
-      if (!user?.pubkey || !followedPubkeys.length) return { activities: [], nextCursor: null };
+      const pubkeys = followedPubkeysRef.current;
+      if (!user?.pubkey || !pubkeys.length) return { activities: [], nextCursor: null };
 
       const until = pageParam as number | undefined;
 
@@ -46,7 +57,7 @@ export function useFollowerRSVPs() {
         until?: number;
       } = {
         kinds: [31925], // RSVP events
-        authors: followedPubkeys,
+        authors: pubkeys,
         limit: ITEMS_PER_PAGE * 2, // Get more RSVPs to account for filtering
       };
 
@@ -123,7 +134,7 @@ export function useFollowerRSVPs() {
     },
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: !!user?.pubkey && !!followedPubkeys.length,
+    enabled: !!user?.pubkey && followedKeyString.length > 0,
     staleTime: 2 * 60 * 1000, // Consider data fresh for 2 minutes
     gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
     retry: 2,

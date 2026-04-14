@@ -195,12 +195,6 @@ export function useOnboarding() {
     skipStep,
     resetOnboarding,
     markUserAsInteracted,
-    // Debug helpers
     userHasInteracted,
-    debugInfo: {
-      user: !!user,
-      hasCompletedOnboarding: onboardingState.hasCompletedOnboarding,
-      userHasInteracted,
-    }
   };
 } 

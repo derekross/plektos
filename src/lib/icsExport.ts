@@ -1,4 +1,5 @@
 import type { DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting } from "./eventTypes";
+import { openUrl } from "./utils";
 
 function formatDateForICS(dateStr: string, isTimeBasedEvent: boolean): string {
   if (isTimeBasedEvent) {
@@ -171,7 +172,7 @@ export function openInCalendar(event: DateBasedEvent | TimeBasedEvent | LiveEven
   }
 
   // Open the preferred calendar
-  window.open(calendarUrls[preferredCalendar as keyof typeof calendarUrls], '_blank');
+  openUrl(calendarUrls[preferredCalendar as keyof typeof calendarUrls]);
 }
 
 export function getCalendarOptions(event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting) {

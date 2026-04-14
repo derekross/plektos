@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,7 +15,8 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useNostrPublish } from "@/hooks/useNostrPublish";
 import { Share2, MapPin, Calendar } from "lucide-react";
 import { toast } from "sonner";
-import { createEventUrl } from "@/lib/nip19Utils";
+import { createEventUrl, createEventIdentifier, isReplaceableEvent } from "@/lib/nip19Utils";
+import { sanitizeUrl } from "@/lib/utils";
 import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 import { getPlatformIcon, isLiveEventType } from "@/lib/platformIcons";
 import {
@@ -115,8 +116,8 @@ function generateShareMessage(event: ShareableEvent): string {
     shareMessage += `\n${truncatedContent}\n`;
   }
 
-  // Create the event URL
-  shareMessage += `\n${createEventUrl(event, "https://plektos.app")}`;
+  // Create the event URL using the current origin
+  shareMessage += `\n${createEventUrl(event)}`;
 
   return shareMessage;
 }
@@ -134,10 +135,8 @@ export function ShareEventDialog({
   const { mutateAsync: publishEvent } = useNostrPublish();
 
   // Detect platform for keyboard hint
-  const isMac = useMemo(() =>
-    typeof navigator !== 'undefined' && navigator.platform.includes('Mac'),
-    []
-  );
+  const isMac = typeof navigator !== "undefined" &&
+    /mac/i.test(navigator.userAgentData?.platform ?? navigator.userAgent);
 
   // Extract event details for preview
   const eventTitle =
@@ -165,17 +164,32 @@ export function ShareEventDialog({
 
     setIsSharing(true);
     try {
+      // Build NIP-compliant tags referencing the original event
+      const tags: string[][] = [
+        ["p", event.pubkey],
+      ];
+
+      if (isReplaceableEvent(event.kind)) {
+        const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+        if (dTag) {
+          tags.push(["a", `${event.kind}:${event.pubkey}:${dTag}`]);
+        }
+      }
+      tags.push(["e", event.id]);
+      // Add q tag for quote repost (NIP-18)
+      const nip19Id = createEventIdentifier(event);
+      tags.push(["q", event.id, "", nip19Id]);
+
       await publishEvent({
         kind: 1,
         content: message,
-        tags: [],
+        tags,
       });
 
       toast.success("Event shared successfully!");
       onOpenChange(false);
-    } catch (error) {
+    } catch {
       toast.error("Failed to share event");
-      console.error("Error sharing event:", error);
     } finally {
       setIsSharing(false);
     }
@@ -209,10 +223,10 @@ export function ShareEventDialog({
         <div className="space-y-4">
           {/* Event Preview Card */}
           <Card className="border-2 border-border/50 overflow-hidden">
-            {eventImage && !imageError && (
+            {sanitizeUrl(eventImage) && !imageError && (
               <div className="aspect-video w-full overflow-hidden bg-muted">
                 <img
-                  src={eventImage}
+                  src={sanitizeUrl(eventImage)!}
                   alt={eventTitle}
                   className="w-full h-full object-cover"
                   onError={() => setImageError(true)}

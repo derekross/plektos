@@ -41,7 +41,7 @@ export function useAuthor(pubkey: string | undefined) {
       );
 
       if (!event) {
-        throw new Error('No event found');
+        return {};
       }
 
       try {
@@ -57,7 +57,7 @@ export function useAuthor(pubkey: string | undefined) {
     },
     // Use cached data as placeholder for instant display
     placeholderData: cachedData,
-    retry: 3,
+    retry: 1,
     staleTime: 10 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
   });

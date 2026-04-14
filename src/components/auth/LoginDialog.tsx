@@ -85,6 +85,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
   }, [nostrConnectParams, login, onLogin, onClose, isWaitingForConnect]);
 
   // Clean up on close, or generate session when opening on native
+  const prevIsOpenRef = useRef(false);
   useEffect(() => {
     if (!isOpen) {
       setNostrConnectParams(null);
@@ -94,12 +95,15 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-    } else if (!hasExtension && !nostrConnectParams && !connectError) {
-      // On native or web without extension, 'connect' is the default tab
-      // Generate the session when dialog opens
-      generateConnectSession();
+      prevIsOpenRef.current = false;
+    } else if (!prevIsOpenRef.current) {
+      // Dialog just opened — generate session if connect tab will be the default
+      prevIsOpenRef.current = true;
+      if (!hasExtension) {
+        generateConnectSession();
+      }
     }
-  }, [isOpen, hasExtension, nostrConnectParams, connectError, generateConnectSession]);
+  }, [isOpen, hasExtension, generateConnectSession]);
 
   // Retry connection with new params
   const handleRetry = useCallback(() => {

@@ -79,55 +79,51 @@ export function useEvents(options?: {
     queryKey: ["events", timeRange, limit, includeRSVPs],
     queryFn: async (c) => {
       const signal = AbortSignal.any([c.signal, AbortSignal.timeout(3000)]);
-      try {
-        // Build filters based on options
-        const filters: NostrFilter[] = [];
+      // Build filters based on options
+      const filters: NostrFilter[] = [];
 
-        // Main calendar events filter
-        const calendarFilter: NostrFilter = {
-          kinds: [31922, 31923, 30311, 30312, 30313],
-          limit,
+      // Main calendar events filter
+      const calendarFilter: NostrFilter = {
+        kinds: [31922, 31923, 30311, 30312, 30313],
+        limit,
+      };
+
+      // Add time-based filtering if specified
+      if (timeRange) {
+        calendarFilter.since = Math.floor(timeRange.start / 1000) - (30 * 24 * 60 * 60);
+        calendarFilter.until = Math.floor(timeRange.end / 1000) + (30 * 24 * 60 * 60);
+      }
+
+      filters.push(calendarFilter);
+
+      // RSVP events filter (if requested)
+      if (includeRSVPs) {
+        const rsvpFilter: NostrFilter = {
+          kinds: [31925],
+          limit: Math.floor(limit / 2),
         };
 
-        // Add time-based filtering if specified
         if (timeRange) {
-          calendarFilter.since = Math.floor(timeRange.start / 1000) - (30 * 24 * 60 * 60);
-          calendarFilter.until = Math.floor(timeRange.end / 1000) + (30 * 24 * 60 * 60);
+          rsvpFilter.since = Math.floor(timeRange.start / 1000) - (30 * 24 * 60 * 60);
+          rsvpFilter.until = Math.floor(timeRange.end / 1000) + (30 * 24 * 60 * 60);
         }
 
-        filters.push(calendarFilter);
+        filters.push(rsvpFilter);
+      }
 
-        // RSVP events filter (if requested)
-        if (includeRSVPs) {
-          const rsvpFilter: NostrFilter = {
-            kinds: [31925],
-            limit: Math.floor(limit / 2),
-          };
+      const events = await nostr.query(filters, { signal });
 
-          if (timeRange) {
-            rsvpFilter.since = Math.floor(timeRange.start / 1000) - (30 * 24 * 60 * 60);
-            rsvpFilter.until = Math.floor(timeRange.end / 1000) + (30 * 24 * 60 * 60);
-          }
-
-          filters.push(rsvpFilter);
-        }
-
-        const events = await nostr.query(filters, { signal });
-
-        if (!events || events.length === 0) {
-          return [];
-        }
-
-        const typedEvents = events as unknown as AllEventTypes[];
-        const result = deduplicateEvents(typedEvents);
-
-        // Cache events in background (non-blocking)
-        Promise.all(result.map(event => cacheEvent(event))).catch(() => {});
-
-        return result;
-      } catch {
+      if (!events || events.length === 0) {
         return [];
       }
+
+      const typedEvents = events as unknown as AllEventTypes[];
+      const result = deduplicateEvents(typedEvents);
+
+      // Cache events in background (non-blocking)
+      Promise.all(result.map(event => cacheEvent(event))).catch(() => {});
+
+      return result;
     },
     // Use cached data as placeholder for instant display
     placeholderData: cachedData,

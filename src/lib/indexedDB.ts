@@ -63,9 +63,14 @@ export async function cacheEvent(
   }
 }
 
+// Maximum number of cached events/RSVPs to return (prevents unbounded memory usage)
+const MAX_CACHED_EVENTS = 500;
+const MAX_CACHED_RSVPS = 500;
+
 export async function getCachedEvents(): Promise<CalendarEvent[]> {
   try {
-    return await db.events.toArray();
+    // Return only the most recent events, sorted by created_at descending
+    return await db.events.orderBy("created_at").reverse().limit(MAX_CACHED_EVENTS).toArray();
   } catch {
     return [];
   }
@@ -73,7 +78,7 @@ export async function getCachedEvents(): Promise<CalendarEvent[]> {
 
 export async function getCachedRSVPs(): Promise<EventRSVP[]> {
   try {
-    return await db.rsvps.toArray();
+    return await db.rsvps.orderBy("created_at").reverse().limit(MAX_CACHED_RSVPS).toArray();
   } catch {
     return [];
   }
@@ -165,8 +170,15 @@ export async function getCachedFollowList(pubkey: string): Promise<CachedFollowL
 export async function cleanupOldCache(maxAgeMs: number = 24 * 60 * 60 * 1000) {
   try {
     const cutoff = Date.now() - maxAgeMs;
-    await db.profiles.where("cachedAt").below(cutoff).delete();
-    await db.followLists.where("cachedAt").below(cutoff).delete();
+    const cutoffSeconds = Math.floor(cutoff / 1000);
+
+    await Promise.all([
+      db.profiles.where("cachedAt").below(cutoff).delete(),
+      db.followLists.where("cachedAt").below(cutoff).delete(),
+      // Clean up old events and RSVPs based on created_at (Unix seconds)
+      db.events.where("created_at").below(cutoffSeconds).delete(),
+      db.rsvps.where("created_at").below(cutoffSeconds).delete(),
+    ]);
   } catch {
     // Silently fail
   }

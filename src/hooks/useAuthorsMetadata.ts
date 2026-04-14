@@ -35,7 +35,7 @@ export function useAuthorsMetadata(pubkeys: string[]) {
       }
     }
     loadCache();
-  }, [sortedKeyString, pubkeys]);
+  }, [sortedKeyString]); // eslint-disable-line react-hooks/exhaustive-deps -- sortedKeyString is derived from pubkeys
 
   return useQuery<Record<string, NostrMetadata>>({
     queryKey: ['authors-metadata', sortedKeyString],

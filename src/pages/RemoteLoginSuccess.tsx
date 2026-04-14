@@ -34,10 +34,13 @@ export function RemoteLoginSuccess() {
       setStatus('success');
       const timer = setTimeout(() => {
         // Try to close this tab (works if opened by signer app)
-        // This leaves the user on the original tab which should detect the login
         window.close();
-        // If we're still here (close didn't work), do a full page redirect
-        window.location.href = '/';
+        // Wait briefly to check if close worked before redirecting
+        setTimeout(() => {
+          if (!window.closed) {
+            window.location.href = '/';
+          }
+        }, 300);
       }, 1500);
       return () => clearTimeout(timer);
     }
@@ -51,7 +54,7 @@ export function RemoteLoginSuccess() {
     } else {
       setStatus('timeout');
     }
-  }, [isLoggedIn, checkCount, navigate, checkLocalStorage]);
+  }, [isLoggedIn, checkCount, checkLocalStorage]);
 
   // Listen for storage events (in case login is added from another context)
   useEffect(() => {
@@ -63,7 +66,11 @@ export function RemoteLoginSuccess() {
             setStatus('success');
             setTimeout(() => {
               window.close();
-              window.location.href = '/';
+              setTimeout(() => {
+                if (!window.closed) {
+                  window.location.href = '/';
+                }
+              }, 300);
             }, 1500);
           }
         } catch {

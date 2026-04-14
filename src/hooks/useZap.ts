@@ -4,6 +4,15 @@ import { toast } from "sonner";
 import { bech32 } from "bech32";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useNostr } from "@nostrify/react";
+import { isValidHostname } from "@/lib/utils";
+
+// Default relay URLs used for zap requests
+const RELAY_URLS = [
+  "wss://relay.damus.io",
+  "wss://relay.primal.net",
+  "wss://nos.lol",
+  "wss://relay.ditto.pub",
+];
 
 // Add WebLN to window type
 declare global {
@@ -51,9 +60,12 @@ export function useZap() {
         const lnurl = lightningAddressToLnurl(options.lightningAddress);
         const [username, domain] = options.lightningAddress.split("@");
 
-        // Validate lightning address format
+        // Validate lightning address format and hostname
         if (!username || !domain) {
           throw new Error("Invalid lightning address format");
+        }
+        if (!isValidHostname(domain)) {
+          throw new Error("Invalid lightning address domain");
         }
 
         // Fetch LNURL data from the user's server
@@ -98,7 +110,7 @@ export function useZap() {
         // Create zap request event following NIP-57 requirements
         const zapRequestTags: string[][] = [
           // Required: relays tag for zap receipt
-          ["relays", "wss://relay.damus.io", "wss://nostr-relay.wlvs.space"],
+          ["relays", ...RELAY_URLS],
           // Required: amount tag matching the amount parameter
           ["amount", amountMsats.toString()],
           // Required: lnurl tag
@@ -228,7 +240,6 @@ export function useZap() {
         // Check for WebLN support
         if (!window.webln) {
           // Fallback to manual payment mode
-          console.log("WebLN not available, switching to manual payment mode");
           const manualPaymentResult = {
             manualPayment: true,
             invoice: invoiceData.pr,
@@ -241,17 +252,14 @@ export function useZap() {
             eventName: options.eventName,
             comment: options.comment,
           };
-          console.log("useZap: Returning manual payment data:", manualPaymentResult);
           return manualPaymentResult;
         }
 
         // Enable WebLN
         try {
           await window.webln.enable();
-        } catch (error) {
-          console.error("Failed to enable WebLN:", error);
+        } catch {
           // Fallback to manual payment mode
-          console.log("WebLN enable failed, switching to manual payment mode");
           return {
             manualPayment: true,
             invoice: invoiceData.pr,
@@ -284,71 +292,48 @@ export function useZap() {
     [user]
   );
 
-        const confirmManualPayment = useCallback(
-            async (manualPaymentData: {
-              manualPayment: boolean;
-              invoice: string;
-              amount: number;
-              lightningAddress: string;
-              eventId: string;
-              eventPubkey: string;
-              eventKind: number;
-              eventIdentifier: string;
-              eventName: string;
-              comment: string;
-            }) => {
-      try {
-        if (!user?.signer) {
-          throw new Error("Please log in to confirm payment");
-        }
-
-        if (!user.pubkey) {
-          throw new Error("Could not get user information");
-        }
-
-        // Create zap request event
-        const zapRequest = {
-          kind: 9734,
-          content: manualPaymentData.comment,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ["p", manualPaymentData.eventPubkey],
-            ["e", manualPaymentData.eventId],
-            ["amount", (manualPaymentData.amount * 1000).toString()], // Convert to millisats
-            ["relays", "wss://relay.primal.net", "wss://relay.nostr.band", "wss://relay.damus.io"],
-          ],
-        };
-
-                // Sign and publish the zap request
-                const signedZapRequest = await user.signer.signEvent(zapRequest);
-                await nostr.event(signedZapRequest);
-
-        // Create zap receipt event
-        const zapReceipt = {
-          kind: 9735,
-          content: "",
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ["p", manualPaymentData.eventPubkey],
-            ["e", manualPaymentData.eventId],
-            ["description", JSON.stringify(zapRequest)],
-            ["bolt11", manualPaymentData.invoice],
-            ["preimage", "manual_payment_confirmed"], // Placeholder for manual payments
-          ],
-        };
-
-        // Sign and publish the zap receipt
-        const signedZapReceipt = await user.signer.signEvent(zapReceipt);
-        const zapReceiptEvent = await nostr.event(signedZapReceipt);
-
-        console.log("Manual payment confirmed, zap receipt published:", zapReceiptEvent);
-        toast.success(`Ticket purchased successfully for ${manualPaymentData.amount} sats!`);
-        
-        return zapReceiptEvent;
-      } catch (error) {
-        console.error("Error confirming manual payment:", error);
-        throw error;
+  const confirmManualPayment = useCallback(
+    async (manualPaymentData: {
+      manualPayment: boolean;
+      invoice: string;
+      amount: number;
+      lightningAddress: string;
+      eventId: string;
+      eventPubkey: string;
+      eventKind: number;
+      eventIdentifier: string;
+      eventName: string;
+      comment: string;
+    }) => {
+      if (!user?.signer) {
+        throw new Error("Please log in to confirm payment");
       }
+
+      if (!user.pubkey) {
+        throw new Error("Could not get user information");
+      }
+
+      // Publish a zap request (kind 9734) so the network knows we intend to pay.
+      // Per NIP-57, only the recipient's LNURL provider may create zap receipts
+      // (kind 9735). We do NOT create one here — that would be a protocol violation.
+      const zapRequest = {
+        kind: 9734,
+        content: manualPaymentData.comment,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["p", manualPaymentData.eventPubkey],
+          ["e", manualPaymentData.eventId],
+          ["amount", (manualPaymentData.amount * 1000).toString()],
+          ["relays", ...RELAY_URLS],
+        ],
+      };
+
+      const signedZapRequest = await user.signer.signEvent(zapRequest);
+      await nostr.event(signedZapRequest);
+
+      toast.success(`Ticket purchased successfully for ${manualPaymentData.amount} sats!`);
+
+      return signedZapRequest;
     },
     [user, nostr]
   );

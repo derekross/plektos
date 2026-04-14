@@ -63,15 +63,31 @@ export function useMuteList() {
     return mutedPubkeys.includes(pubkey);
   };
 
+  // Fetch the latest mute list from relay to avoid stale-cache overwrites
+  const fetchFreshMuteList = async (): Promise<MuteListEvent | null> => {
+    if (!user?.pubkey) return null;
+
+    const events = await nostr.query(
+      [{ kinds: [10000], authors: [user.pubkey], limit: 1 }],
+      { signal: AbortSignal.timeout(3000) },
+    );
+
+    if (events.length === 0) return null;
+
+    const sorted = events.sort((a, b) => b.created_at - a.created_at);
+    return sorted[0] as MuteListEvent;
+  };
+
   // Add a pubkey to the mute list
   const mutePubkey = async (pubkey: string, reason: string = "") => {
     if (!user) {
       throw new Error("User must be logged in to mute");
     }
 
-    // Get current mute list tags
-    const currentTags = muteList?.tags || [];
-    
+    // Always fetch fresh from relay to prevent last-write-wins data loss
+    const freshList = await fetchFreshMuteList();
+    const currentTags = freshList?.tags || [];
+
     // Check if already muted
     if (currentTags.some(tag => tag[0] === "p" && tag[1] === pubkey)) {
       return; // Already muted
@@ -99,12 +115,15 @@ export function useMuteList() {
       throw new Error("User must be logged in to unmute");
     }
 
-    if (!muteList) {
+    // Always fetch fresh from relay to prevent last-write-wins data loss
+    const freshList = await fetchFreshMuteList();
+
+    if (!freshList) {
       return; // No mute list exists
     }
 
     // Remove the pubkey from the mute list
-    const newTags = muteList.tags.filter(
+    const newTags = freshList.tags.filter(
       tag => !(tag[0] === "p" && tag[1] === pubkey)
     );
 

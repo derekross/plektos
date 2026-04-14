@@ -94,14 +94,30 @@ export function useFollowList() {
     return followedPubkeys.includes(pubkey);
   };
 
+  // Fetch the latest follow list from relay to avoid stale-cache overwrites
+  const fetchFreshFollowList = async (): Promise<FollowListEvent | null> => {
+    if (!user?.pubkey) return null;
+
+    const events = await nostr.query(
+      [{ kinds: [3], authors: [user.pubkey], limit: 1 }],
+      { signal: AbortSignal.timeout(3000) },
+    );
+
+    if (events.length === 0) return null;
+
+    const sorted = events.sort((a, b) => b.created_at - a.created_at);
+    return sorted[0] as FollowListEvent;
+  };
+
   // Follow a pubkey
   const followPubkey = async (pubkey: string, relayUrl: string = "") => {
     if (!user) {
       throw new Error("User must be logged in to follow");
     }
 
-    // Get current follow list tags
-    const currentTags = followList?.tags || [];
+    // Always fetch fresh from relay to prevent last-write-wins data loss
+    const freshList = await fetchFreshFollowList();
+    const currentTags = freshList?.tags || [];
 
     // Check if already following
     if (currentTags.some(tag => tag[0] === "p" && tag[1] === pubkey)) {
@@ -115,7 +131,7 @@ export function useFollowList() {
     ];
 
     // Preserve existing content (usually a JSON string of relay information)
-    const content = followList?.content || "";
+    const content = freshList?.content || "";
 
     await publishEvent({
       kind: 3,
@@ -133,17 +149,20 @@ export function useFollowList() {
       throw new Error("User must be logged in to unfollow");
     }
 
-    if (!followList) {
+    // Always fetch fresh from relay to prevent last-write-wins data loss
+    const freshList = await fetchFreshFollowList();
+
+    if (!freshList) {
       return; // No follow list exists
     }
 
     // Remove the pubkey from the follow list
-    const newTags = followList.tags.filter(
+    const newTags = freshList.tags.filter(
       tag => !(tag[0] === "p" && tag[1] === pubkey)
     );
 
     // Preserve existing content
-    const content = followList.content || "";
+    const content = freshList.content || "";
 
     await publishEvent({
       kind: 3,

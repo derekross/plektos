@@ -40,15 +40,6 @@ export function useEnhancedNostrPublish(): UseMutationResult<NostrEvent> {
       // Combine user relays with bootstrap relays, removing duplicates
       const allRelays = [...new Set([...userRelays, ...BOOTSTRAP_RELAYS])];
       
-      console.log(`Publishing event to ${allRelays.length} relays:`, {
-        eventId: event.id,
-        kind: event.kind,
-        userRelays: userRelays.length,
-        bootstrapRelays: BOOTSTRAP_RELAYS.length,
-        totalRelays: allRelays.length,
-        relays: allRelays,
-      });
-
       // Publish to relays individually to handle failures gracefully
       const publishResults = await Promise.allSettled(
         allRelays.map(async (relay) => {
@@ -77,16 +68,6 @@ export function useEnhancedNostrPublish(): UseMutationResult<NostrEvent> {
         (result.status === 'fulfilled' && result.value.status === 'failed')
       );
 
-      console.log(`Event publishing completed:`, {
-        eventId: event.id,
-        successful: successfulPublishes.length,
-        failed: failedPublishes.length,
-        total: allRelays.length,
-        successfulRelays: successfulPublishes.map(r => 
-          r.status === 'fulfilled' ? r.value.relay : null
-        ).filter(Boolean)
-      });
-
       // Only log failed relays in debug mode to reduce console noise
       if (failedPublishes.length > 0) {
         console.debug("Some relays failed to publish:", 
@@ -105,11 +86,8 @@ export function useEnhancedNostrPublish(): UseMutationResult<NostrEvent> {
 
       return event;
     },
-    onError: (error) => {
-      console.error("Failed to publish event:", error);
-    },
-    onSuccess: (data) => {
-      console.log("Event published successfully:", data);
+    onError: () => {
+      // Error handling is done by the caller
     },
   });
 }

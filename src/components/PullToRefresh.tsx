@@ -63,11 +63,13 @@ export function PullToRefresh({ children, onRefresh, disabled = false }: PullToR
         if (onRefresh) {
           await onRefresh();
         } else {
-          // Default: invalidate all queries to refresh data
-          await queryClient.invalidateQueries();
+          // Invalidate only the main data queries, not the entire cache
+          await queryClient.invalidateQueries({ queryKey: ["events"] });
+          await queryClient.invalidateQueries({ queryKey: ["followerRSVPs"] });
+          await queryClient.invalidateQueries({ queryKey: ["eventRSVPs"] });
         }
-      } catch (error) {
-        console.error('Refresh failed:', error);
+      } catch {
+        // Refresh failed silently — the user sees the indicator reset
       } finally {
         setRefreshing(false);
         setPullDistance(0);
@@ -83,15 +85,16 @@ export function PullToRefresh({ children, onRefresh, disabled = false }: PullToR
     const container = containerRef.current;
     if (!container) return;
 
-    // Use passive: false to allow preventDefault
-    document.addEventListener('touchstart', handleTouchStart, { passive: true });
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+    // Attach listeners to the container element, not document,
+    // so pull-to-refresh doesn't fire from modals/drawers
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
-      document.removeEventListener('touchstart', handleTouchStart);
-      document.removeEventListener('touchmove', handleTouchMove);
-      document.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
     };
   }, [isNative, handleTouchStart, handleTouchMove, handleTouchEnd]);
 
