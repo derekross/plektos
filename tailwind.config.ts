@@ -21,6 +21,7 @@ export default {
 		extend: {
 			fontFamily: {
 				sans: ['Outfit Variable', 'Outfit', 'system-ui', 'sans-serif'],
+				title: ['var(--title-font-family)', 'Outfit Variable', 'Outfit', 'system-ui', 'sans-serif'],
 			},
 			colors: {
 				border: 'hsl(var(--border))',

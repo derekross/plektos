@@ -16,6 +16,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useAuthor } from "@/hooks/useAuthor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MessageCircle, Lock, MessageSquare } from "lucide-react";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface ContactOrganizerDialogProps {
@@ -41,6 +42,7 @@ export function ContactOrganizerDialog({
     organizerMetadata?.display_name ||
     organizerPubkey.slice(0, 8);
   const organizerImage = organizerMetadata?.picture;
+  const shape = getAvatarShape(organizerMetadata);
 
   const handleSendMessage = async () => {
     if (!message.trim() || !user) return;
@@ -108,7 +110,7 @@ export function ContactOrganizerDialog({
         <div className="space-y-4">
           {/* Organizer info */}
           <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-            <Avatar className="h-8 w-8">
+            <Avatar className="h-8 w-8" shape={shape}>
               <AvatarImage src={organizerImage} alt={organizerName} />
               <AvatarFallback>{organizerName.slice(0, 2)}</AvatarFallback>
             </Avatar>

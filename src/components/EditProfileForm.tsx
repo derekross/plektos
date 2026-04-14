@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -20,6 +20,8 @@ import { Loader2, Upload } from 'lucide-react';
 import { NSchema as n, type NostrMetadata } from '@nostrify/nostrify';
 import { useQueryClient } from '@tanstack/react-query';
 import { useUploadFile } from '@/hooks/useUploadFile';
+import { ShapePicker } from '@/components/ShapePicker';
+import { getAvatarShape } from '@/lib/avatarShapes';
 
 export const EditProfileForm: React.FC = () => {
   const queryClient = useQueryClient();
@@ -27,6 +29,7 @@ export const EditProfileForm: React.FC = () => {
   const { user, metadata } = useCurrentUser();
   const { mutateAsync: publishEvent, isPending } = useEnhancedNostrPublish();
   const { mutateAsync: uploadFile, isPending: isUploading } = useUploadFile();
+  const [shape, setShape] = useState<string | undefined>(undefined);
 
 
   // Initialize the form with default values
@@ -55,6 +58,7 @@ export const EditProfileForm: React.FC = () => {
         nip05: metadata.nip05 || '',
         lud16: metadata.lud16 || '',
       });
+      setShape(getAvatarShape(metadata as Record<string, unknown>));
     }
   }, [metadata, form]);
 
@@ -79,7 +83,14 @@ export const EditProfileForm: React.FC = () => {
 
     try {
       // Combine existing metadata with new values
-      const data = { ...metadata, ...values };
+      const data: Record<string, unknown> = { ...metadata, ...values };
+
+      // Include shape if set, remove if cleared
+      if (shape) {
+        data.shape = shape;
+      } else {
+        delete data.shape;
+      }
 
       // Clean up empty values
       for (const key in data) {
@@ -178,6 +189,8 @@ export const EditProfileForm: React.FC = () => {
             )}
           />
         </div>
+
+        <ShapePicker value={shape} onChange={setShape} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField

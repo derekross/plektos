@@ -11,14 +11,15 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar, Ticket, History } from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { useUserRSVPs, type UserRSVPWithEvent, type UserTicketWithEvent } from "@/hooks/useUserRSVPs";
+import { useUserRSVPs, type UserRSVPWithEvent, type UserTicketWithEvent, type UserCreatedEvent } from "@/hooks/useUserRSVPs";
 import { LoginArea } from "@/components/auth/LoginArea";
 import { createEventIdentifier } from "@/lib/nip19Utils";
 import { TimezoneDisplay } from '@/components/TimezoneDisplay';
 import { TicketQRCode } from '@/components/TicketQRCode';
 
-function EventCard({ eventData }: { eventData: UserRSVPWithEvent | UserTicketWithEvent }) {
+function EventCard({ eventData }: { eventData: UserRSVPWithEvent | UserTicketWithEvent | UserCreatedEvent }) {
   const isTicket = 'isTicket' in eventData && eventData.isTicket;
+  const isCreated = 'isCreated' in eventData && eventData.isCreated;
   const event = eventData.event;
   const eventTitle = eventData.eventTitle;
   const location = event.tags.find((tag) => tag[0] === "location")?.[1];
@@ -47,27 +48,34 @@ function EventCard({ eventData }: { eventData: UserRSVPWithEvent | UserTicketWit
             </div>
           )}
                   <div className="flex items-center justify-between mb-2 mt-2">
-                    {isTicket ? (
+                    {isCreated ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-primary/10 text-primary border-primary/30"
+                      >
+                        Host
+                      </Badge>
+                    ) : isTicket ? (
                       <Badge
                         variant="outline"
                         className="bg-amber-500/10 text-amber-500"
                       >
-                        🎟️ Ticket {eventData.sequenceNumber && eventData.totalTickets ? `${eventData.sequenceNumber}/${eventData.totalTickets}` : 'Purchased'}
+                        🎟️ Ticket {'sequenceNumber' in eventData && 'totalTickets' in eventData && eventData.sequenceNumber && eventData.totalTickets ? `${eventData.sequenceNumber}/${eventData.totalTickets}` : 'Purchased'}
                       </Badge>
                     ) : (
               <Badge
                 variant="outline"
                 className={
-                  !isTicket && 'status' in eventData && eventData.status === "accepted"
+                  'status' in eventData && eventData.status === "accepted"
                     ? "bg-green-500/10 text-green-500"
-                    : !isTicket && 'status' in eventData && eventData.status === "tentative"
+                    : 'status' in eventData && eventData.status === "tentative"
                     ? "bg-yellow-500/10 text-yellow-500"
                     : "bg-red-500/10 text-red-500"
                 }
               >
-                {!isTicket && 'status' in eventData && eventData.status === "accepted"
+                {'status' in eventData && eventData.status === "accepted"
                   ? "Going"
-                  : !isTicket && 'status' in eventData && eventData.status === "tentative"
+                  : 'status' in eventData && eventData.status === "tentative"
                   ? "Maybe"
                   : "Can't Go"}
               </Badge>
@@ -92,7 +100,7 @@ function EventCard({ eventData }: { eventData: UserRSVPWithEvent | UserTicketWit
               </span>
             </div>
           )}
-          {!isTicket && 'rsvp' in eventData && eventData.rsvp.content && (
+          {!isTicket && !isCreated && 'rsvp' in eventData && eventData.rsvp.content && (
             <p className="text-muted-foreground text-sm mt-2">
               Your note: {eventData.rsvp.content}
             </p>
@@ -195,7 +203,12 @@ export function MyTickets() {
               {rsvpData?.upcoming && rsvpData.upcoming.length > 0 ? (
                 rsvpData.upcoming.map((eventData) => {
                   const isTicket = 'isTicket' in eventData && eventData.isTicket;
-                  const key = isTicket ? (eventData as UserTicketWithEvent).zapReceipt.id : (eventData as UserRSVPWithEvent).rsvp.id;
+                  const isCreated = 'isCreated' in eventData && eventData.isCreated;
+                  const key = isCreated
+                    ? `created-${eventData.event.id}`
+                    : isTicket
+                    ? (eventData as UserTicketWithEvent).zapReceipt.id
+                    : (eventData as UserRSVPWithEvent).rsvp.id;
                   return <EventCard key={key} eventData={eventData} />;
                 })
               ) : (
@@ -234,7 +247,12 @@ export function MyTickets() {
               {rsvpData?.past && rsvpData.past.length > 0 ? (
                 rsvpData.past.map((eventData) => {
                   const isTicket = 'isTicket' in eventData && eventData.isTicket;
-                  const key = isTicket ? (eventData as UserTicketWithEvent).zapReceipt.id : (eventData as UserRSVPWithEvent).rsvp.id;
+                  const isCreated = 'isCreated' in eventData && eventData.isCreated;
+                  const key = isCreated
+                    ? `created-${eventData.event.id}`
+                    : isTicket
+                    ? (eventData as UserTicketWithEvent).zapReceipt.id
+                    : (eventData as UserRSVPWithEvent).rsvp.id;
                   return <EventCard key={key} eventData={eventData} />;
                 })
               ) : (

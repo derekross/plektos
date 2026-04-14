@@ -12,6 +12,7 @@ import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 import { genUserName } from "@/lib/genUserName";
 import { LoginArea } from "@/components/auth/LoginArea";
 import { getPlatformIcon, isLiveEventType } from "@/lib/platformIcons";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { useMemo, useEffect, useCallback } from "react";
 
 export function SocialFeed() {
@@ -255,6 +256,7 @@ function SocialFeedItem({ activity, authorMetadata }: SocialFeedItemProps) {
                     authorMetadata?.display_name || 
                     genUserName(activity.authorPubkey);
   const authorImage = authorMetadata?.picture;
+  const shape = getAvatarShape(authorMetadata);
   
   const eventTitle = activity.event.tags.find(tag => tag[0] === "title")?.[1] || "Untitled Event";
   const eventDescription = activity.event.content;
@@ -274,7 +276,7 @@ function SocialFeedItem({ activity, authorMetadata }: SocialFeedItemProps) {
     <Card className="rounded-none sm:rounded-2xl border-2 border-transparent hover:border-primary/20 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10">
       <CardHeader className="p-4 sm:p-5 pb-3">
         <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10 sm:h-12 sm:w-12">
+          <Avatar className="h-10 w-10 sm:h-12 sm:w-12" shape={shape}>
             <AvatarImage src={authorImage} alt={authorName} />
             <AvatarFallback className="text-sm font-medium">
               {authorName.slice(0, 2).toUpperCase()}

@@ -78,9 +78,18 @@ describe('OnboardingDialog', () => {
       expect(screen.getByText('Add a profile picture')).toBeInTheDocument();
     });
 
-    // Proceed to bio step
+    // Proceed to shape step
     const nextButton2 = screen.getByText('Next');
     fireEvent.click(nextButton2);
+
+    // Should be on shape step
+    await waitFor(() => {
+      expect(screen.getByText('Choose your vibe')).toBeInTheDocument();
+    });
+
+    // Proceed to bio step
+    const nextButton3 = screen.getByText('Next');
+    fireEvent.click(nextButton3);
 
     // Should be on bio step
     await waitFor(() => {
@@ -135,10 +144,16 @@ describe('OnboardingDialog', () => {
     const nextButton = screen.getByText('Next');
     fireEvent.click(nextButton);
 
-    // Go to bio step
+    // Go to shape step
     await waitFor(() => {
       const nextButton2 = screen.getByText('Next');
       fireEvent.click(nextButton2);
+    });
+
+    // Go to bio step
+    await waitFor(() => {
+      const nextButton3 = screen.getByText('Next');
+      fireEvent.click(nextButton3);
     });
 
     // Go to final step

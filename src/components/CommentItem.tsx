@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useAuthor } from "@/hooks/useAuthor";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { UserActionsMenu } from "@/components/UserActionsMenu";
 import type { NostrEvent } from "@nostrify/nostrify";
 
@@ -45,6 +46,7 @@ export const CommentItem = memo(function CommentItem({
                       authorMetadata?.display_name || 
                       comment.pubkey.slice(0, 8);
   const profileImage = authorMetadata?.picture;
+  const shape = getAvatarShape(authorMetadata);
   
   const timeAgo = formatDistanceToNow(new Date(comment.created_at * 1000), {
     addSuffix: true,
@@ -52,7 +54,7 @@ export const CommentItem = memo(function CommentItem({
 
   return (
     <div className="flex gap-3 p-4 border rounded-lg bg-card">
-      <Avatar className="h-8 w-8 flex-shrink-0">
+      <Avatar className="h-8 w-8 flex-shrink-0" shape={shape}>
         <AvatarImage src={profileImage} alt={displayName} />
         <AvatarFallback className="text-xs">
           {displayName.slice(0, 2).toUpperCase()}

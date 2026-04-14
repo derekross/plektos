@@ -15,6 +15,9 @@ import { PaidTicketForm } from "@/components/PaidTicketForm";
 import { EventbriteStyleRecurringForm, type EventbriteRecurringConfig } from "@/components/EventbriteStyleRecurringForm";
 import { RecurringEventPreview } from "@/components/RecurringEventPreview";
 import { EventCategory } from "@/lib/eventCategories";
+import { ThemePicker } from "@/components/ThemePicker";
+import { EventThemeProvider } from "@/components/EventThemeProvider";
+import { buildThemeTags, type ThemeConfig } from "@/lib/themes";
 import { toast } from "sonner";
 import {
   Select,
@@ -37,6 +40,7 @@ export function CreateEvent() {
   const { user } = useCurrentUser();
   const { mutate: createEvent } = useNostrPublish();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [eventTheme, setEventTheme] = useState<ThemeConfig | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -301,6 +305,11 @@ export function CreateEvent() {
           );
         }
 
+        // Add theme tags if a theme is selected
+        if (eventTheme) {
+          tags.push(...buildThemeTags(eventTheme));
+        }
+
         // Add recurring event information if this is part of a series
         if (formData.eventbriteRecurringConfig.enabled && eventDates.length > 1) {
           tags.push(["recurring", "true"]);
@@ -365,7 +374,7 @@ export function CreateEvent() {
     );
   }
 
-  return (
+  const formContent = (
     <div className="container px-0 sm:px-4 py-2 sm:py-6 space-y-6 sm:space-y-8">
       <div className="px-3 sm:px-0 text-center space-y-4">
         <div className="flex justify-center"><PartyPopper className="h-12 w-12 text-primary" /></div>
@@ -439,6 +448,8 @@ export function CreateEvent() {
             setFormData((prev) => ({ ...prev, categories }))
           }
         />
+
+        <ThemePicker value={eventTheme} onChange={setEventTheme} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
@@ -652,4 +663,11 @@ export function CreateEvent() {
       </form>
     </div>
   );
+
+  // Wrap in EventThemeProvider so the creator sees a live preview of their chosen theme
+  if (eventTheme) {
+    return <EventThemeProvider theme={eventTheme}>{formContent}</EventThemeProvider>;
+  }
+
+  return formContent;
 }

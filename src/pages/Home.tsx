@@ -44,6 +44,7 @@ import { MapView } from "@/components/MapView";
 import { LocationSearch } from "@/components/LocationSearch";
 import { sortEventsByDistance, formatDistance, type Coordinates } from "@/lib/geolocation";
 import { formatAmount } from "@/lib/lightning";
+import { parseThemeFromTags, hslStringToHex } from "@/lib/themes";
 
 export function Home() {
   const [viewMode, setViewMode] = useState<"grid" | "calendar" | "map">("grid");
@@ -788,6 +789,10 @@ export function Home() {
               // Get platform icon for live events
               const platformIcon = isLiveEventType(event) ? getPlatformIcon(event) : null;
 
+              // Parse theme colors for themed card indicator
+              const cardTheme = parseThemeFromTags(event.tags);
+              const themePrimaryHex = cardTheme ? hslStringToHex(cardTheme.colors.primary) : undefined;
+
               // Add ref to last element for infinite scroll
               const isLastElement = index === filteredEvents.length - 1;
 
@@ -797,7 +802,12 @@ export function Home() {
                   ref={isLastElement ? lastEventElementRef : undefined}
                 >
                   <Link to={`/event/${eventIdentifier}`}>
-                    <Card className="h-full transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/20 overflow-hidden rounded-none sm:rounded-3xl border-2 border-transparent hover:border-primary/20 group">
+                    <Card
+                      className="h-full flex flex-col transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/20 overflow-hidden rounded-none sm:rounded-3xl border-2 border-transparent hover:border-primary/20 group"
+                      style={themePrimaryHex ? { '--theme-border': themePrimaryHex } as React.CSSProperties : undefined}
+                      onMouseEnter={themePrimaryHex ? (e) => { (e.currentTarget as HTMLElement).style.borderColor = themePrimaryHex; } : undefined}
+                      onMouseLeave={themePrimaryHex ? (e) => { (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; } : undefined}
+                    >
                     <div className="aspect-video w-full overflow-hidden relative">
                       <img
                         src={sanitizeUrl(imageUrl) || "/default-calendar.png"}
@@ -858,60 +868,60 @@ export function Home() {
                         </CardDescription>
                       )}
                     </CardHeader>
-                    <CardContent className="p-4 sm:p-6 pt-0">
-                      <p className="line-clamp-2 text-sm text-muted-foreground leading-relaxed">
+                    <CardContent className="p-4 sm:p-6 pt-0 flex flex-col flex-1">
+                      {/* Description — fixed height so cards align */}
+                      <p className="line-clamp-2 text-sm text-muted-foreground leading-relaxed min-h-[2.5rem]">
                         {description}
                       </p>
-                      
-                      {/* Additional event details */}
-                      <div className="mt-3 space-y-2">
-                        {/* Pricing information */}
+
+                      {/* Badges — pushed to bottom with mt-auto */}
+                      <div className="mt-auto pt-3 flex flex-wrap items-center gap-1.5">
+                        {/* Price badge */}
                         {isPaidEvent ? (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-800">
-                            <span className="text-amber-600 dark:text-amber-400">🎟️</span>
-                            <span className="font-medium text-amber-800 dark:text-amber-200">
-                              {formatAmount(parseInt(price, 10) || 0)}
-                            </span>
-                          </div>
+                          <Badge variant="outline" className="rounded-full text-xs font-medium px-2.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-300/50 dark:border-amber-700/50">
+                            {formatAmount(parseInt(price, 10) || 0)}
+                          </Badge>
                         ) : (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-green-50 dark:bg-green-950/20 p-2 rounded-xl border border-green-200 dark:border-green-800">
-                            <span className="text-green-600 dark:text-green-400">🆓</span>
-                            <span className="font-medium text-green-800 dark:text-green-200">
-                              Free Event
-                            </span>
-                          </div>
+                          <Badge variant="outline" className="rounded-full text-xs font-medium px-2.5 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-300/50 dark:border-emerald-700/50">
+                            Free
+                          </Badge>
                         )}
-                        
-                        {/* Attendee count (show for any count, but with different styling) */}
+
+                        {/* Attendee badge */}
                         {attendeeCount > 0 && (
-                          <div className={`flex items-center gap-2 text-sm text-muted-foreground p-2 rounded-xl border ${
-                            attendeeCount > 5 
-                              ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                              : 'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800'
-                          }`}>
-                            <span className={`${attendeeCount > 5 ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'}`}>👥</span>
-                            <span className={`font-medium ${attendeeCount > 5 ? 'text-green-800 dark:text-green-200' : 'text-blue-800 dark:text-blue-200'}`}>
-                              {attendeeCount} {attendeeCount === 1 ? 'person' : 'people'} going
-                            </span>
-                          </div>
+                          <Badge variant="outline" className="rounded-full text-xs font-medium px-2.5 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-300/50 dark:border-blue-700/50">
+                            {attendeeCount} going
+                          </Badge>
                         )}
-                        
-                        {/* Live stream or location */}
-                        {streamingUrl ? (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-blue-50 dark:bg-blue-950/20 p-2 rounded-xl border border-blue-200 dark:border-blue-800">
-                            <span className="text-blue-600 dark:text-blue-400">🎥</span>
-                            <span className="font-medium text-blue-800 dark:text-blue-200">Live Stream</span>
-                          </div>
-                        ) : location && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 p-2 rounded-xl">
-                            <span className="text-primary">📍</span>
-                            <span className="font-medium">{location}</span>
-                            {sortByDistance && event.distance !== undefined && (
-                              <Badge variant="secondary" className="ml-auto">
-                                {formatDistance(event.distance)} away
-                              </Badge>
-                            )}
-                          </div>
+
+                        {/* Live stream badge */}
+                        {streamingUrl && (
+                          <Badge variant="outline" className="rounded-full text-xs font-medium px-2.5 py-0.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-300/50 dark:border-violet-700/50">
+                            Live
+                          </Badge>
+                        )}
+
+                        {/* Location — only show as badge if no stream */}
+                        {!streamingUrl && location && (
+                          <Badge variant="outline" className="rounded-full text-xs font-medium px-2.5 py-0.5 text-muted-foreground border-border/50 max-w-[180px] truncate">
+                            {location}
+                          </Badge>
+                        )}
+
+                        {/* Distance badge */}
+                        {sortByDistance && event.distance !== undefined && (
+                          <Badge variant="secondary" className="rounded-full text-xs px-2.5 py-0.5 ml-auto">
+                            {formatDistance(event.distance)}
+                          </Badge>
+                        )}
+
+                        {/* Theme swatch dots */}
+                        {cardTheme && (
+                          <span className="flex items-center gap-0.5 ml-auto">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: hslStringToHex(cardTheme.colors.background) }} />
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: hslStringToHex(cardTheme.colors.primary) }} />
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: hslStringToHex(cardTheme.colors.text) }} />
+                          </span>
                         )}
                       </div>
                     </CardContent>

@@ -11,11 +11,14 @@ import { TimePicker } from "@/components/ui/time-picker";
 import { LocationSearch } from "@/components/LocationSearch";
 import { ImageUpload } from "@/components/ImageUpload";
 import { CategorySelector } from "@/components/CategorySelector";
+import { ThemePicker } from "@/components/ThemePicker";
 import { PaidTicketForm } from "@/components/PaidTicketForm";
 import { ParticipantManager } from "@/components/ParticipantManager";
 import type { Participant } from "@/components/ParticipantSearch";
 import { EventCategory } from "@/lib/eventCategories";
 import { genUserName } from "@/lib/genUserName";
+import type { ThemeConfig } from "@/lib/themes";
+import { parseThemeFromTags, buildThemeTags } from "@/lib/themes";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -181,11 +184,13 @@ export function EditEvent({ event, onEventUpdated }: EditEventProps) {
   }, [event]);
 
   const [formData, setFormData] = useState(getInitialFormData());
+  const [eventTheme, setEventTheme] = useState<ThemeConfig | null>(() => parseThemeFromTags(event.tags));
 
   // Reset form data when event changes
   useEffect(() => {
     setFormData(getInitialFormData());
-  }, [getInitialFormData]);
+    setEventTheme(parseThemeFromTags(event.tags));
+  }, [getInitialFormData, event.tags]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -328,6 +333,11 @@ export function EditEvent({ event, onEventUpdated }: EditEventProps) {
         );
       }
 
+      // Add theme tags if a theme is selected
+      if (eventTheme) {
+        tags.push(...buildThemeTags(eventTheme));
+      }
+
       updateEvent({
         kind: eventKind,
         content: formData.description,
@@ -450,6 +460,8 @@ export function EditEvent({ event, onEventUpdated }: EditEventProps) {
               setFormData((prev) => ({ ...prev, categories }))
             }
           />
+
+          <ThemePicker value={eventTheme} onChange={setEventTheme} />
 
           <div className="space-y-4 sm:space-y-6">
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">

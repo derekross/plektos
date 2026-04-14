@@ -3,9 +3,11 @@ import { useNostr } from "@nostrify/react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting, InteractiveRoom, EventRSVP } from "@/lib/eventTypes";
 
+type CalendarEventType = DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom;
+
 interface UserRSVPWithEvent {
   rsvp: EventRSVP;
-  event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom;
+  event: CalendarEventType;
   status: string;
   eventTitle: string;
   eventDate: Date;
@@ -21,7 +23,7 @@ interface UserTicketWithEvent {
     content: string;
     tags: string[][];
   }; // Zap receipt event (kind 9735)
-  event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom;
+  event: CalendarEventType;
   amount: number;
   eventTitle: string;
   eventDate: Date;
@@ -31,7 +33,15 @@ interface UserTicketWithEvent {
   totalTickets?: number; // Total tickets purchased for this event
 }
 
-export type { UserRSVPWithEvent, UserTicketWithEvent };
+interface UserCreatedEvent {
+  event: CalendarEventType;
+  eventTitle: string;
+  eventDate: Date;
+  eventStartTime?: string;
+  isCreated: true;
+}
+
+export type { UserRSVPWithEvent, UserTicketWithEvent, UserCreatedEvent };
 
 export function useUserRSVPs() {
   const { nostr } = useNostr();
@@ -136,6 +146,22 @@ export function useUserRSVPs() {
     staleTime: 30000,
   });
 
+  // Fetch events created by the user (they're the organizer)
+  const { data: createdEvents = [], isLoading: isLoadingCreatedEvents } = useQuery({
+    queryKey: ["userCreatedEvents", user?.pubkey],
+    queryFn: async ({ signal }) => {
+      if (!user?.pubkey) return [];
+      const events = await nostr.query(
+        [{ kinds: [31922, 31923, 30311, 30312, 30313], authors: [user.pubkey], limit: 100 }],
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]) }
+      );
+      return events as unknown as CalendarEventType[];
+    },
+    enabled: !!user?.pubkey,
+    retry: 1,
+    staleTime: 30000,
+  });
+
   // Fetch events for zap receipts (purchased tickets)
   const { data: ticketEvents = [], isLoading: isLoadingTicketEvents } = useQuery({
     queryKey: ["userTicketEvents", zapReceipts],
@@ -162,14 +188,8 @@ export function useUserRSVPs() {
   });
 
   const processedQuery = useQuery({
-    queryKey: ["processedUserTickets", rsvps, rsvpEvents, zapReceipts, ticketEvents],
-    queryFn: async (): Promise<{ upcoming: (UserRSVPWithEvent | UserTicketWithEvent)[], past: (UserRSVPWithEvent | UserTicketWithEvent)[] }> => {
-      console.log('🔍 Processing user tickets/RSVPs:', {
-        rsvps: rsvps.length,
-        rsvpEvents: rsvpEvents.length,
-        zapReceipts: zapReceipts.length,
-        ticketEvents: ticketEvents.length
-      });
+    queryKey: ["processedUserTickets", rsvps, rsvpEvents, zapReceipts, ticketEvents, createdEvents],
+    queryFn: async (): Promise<{ upcoming: (UserRSVPWithEvent | UserTicketWithEvent | UserCreatedEvent)[], past: (UserRSVPWithEvent | UserTicketWithEvent | UserCreatedEvent)[] }> => {
 
       const processedRSVPs: UserRSVPWithEvent[] = [];
       const processedTickets: UserTicketWithEvent[] = [];
@@ -178,7 +198,6 @@ export function useUserRSVPs() {
       // Process RSVPs
       if (rsvps.length) {
         if (rsvpEvents.length) {
-          console.log('📝 Processing RSVPs:', rsvps.length, 'events:', rsvpEvents.length);
           // First, deduplicate RSVPs to get only the latest RSVP for each event
           const eventToLatestRSVP = new Map<string, EventRSVP>();
 
@@ -218,14 +237,7 @@ export function useUserRSVPs() {
 
         const title = event.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled";
           let startTime = event.tags.find((tag) => tag[0] === "start")?.[1];
-          
-          console.log('🔍 Event start time debug:', {
-            eventTitle: title,
-            eventKind: event.kind,
-            startTime,
-            allTags: event.tags
-          });
-          
+
           if (!startTime) {
             // For live events, try alternative time tags
             const alternativeStartTime = event.tags.find((tag) => 
@@ -261,34 +273,15 @@ export function useUserRSVPs() {
             const eventCreatedAt = event.created_at * 1000; // Convert to milliseconds
             eventDate = new Date(eventCreatedAt);
           } else {
-            console.error('❌ Unknown date format:', { startTime, eventKind: event.kind, eventTitle: title });
-            // Skip this event
             continue;
           }
 
           // Check if the date is valid
           if (isNaN(eventDate.getTime())) {
-            console.error('❌ Invalid date created:', { startTime, eventKind: event.kind, eventTitle: title });
-            // Skip this event
             continue;
           }
 
-          const now = new Date();
-          const isUpcoming = eventDate >= now;
-          
-          console.log('📅 RSVP date calculation:', {
-            eventTitle: title,
-            eventKind: event.kind,
-            startTime,
-            eventDate: eventDate.toISOString(),
-            now: now.toISOString(),
-            isUpcoming,
-            timeDiff: eventDate.getTime() - now.getTime(),
-            timeDiffHours: (eventDate.getTime() - now.getTime()) / (1000 * 60 * 60)
-          });
-        } catch (error) {
-          console.error('❌ Error calculating date:', { error, startTime, eventKind: event.kind, eventTitle: title });
-          // Skip this event
+        } catch {
           continue;
         }
 
@@ -302,17 +295,11 @@ export function useUserRSVPs() {
           eventStartTime: startTime,
         });
         }
-        } else {
-          console.log('⏳ Found RSVPs but events still loading:', rsvps.length, 'RSVPs,', rsvpEvents.length, 'events');
-          console.log('RSVP event IDs:', rsvps.map(r => r.tags.find(t => t[0] === 'e')?.[1]).filter(Boolean));
-          console.log('Available event IDs:', rsvpEvents.map(e => e.id));
         }
       }
 
       // Process purchased tickets (zap receipts) - show all individually with sequence numbers
       if (zapReceipts.length && ticketEvents.length) {
-        console.log('🎫 Processing tickets - zapReceipts:', zapReceipts.length, 'ticketEvents:', ticketEvents.length);
-        
         // Group tickets by event ID to calculate sequence numbers
         const ticketsByEvent = new Map<string, unknown[]>();
 
@@ -330,8 +317,6 @@ export function useUserRSVPs() {
           ticketsByEvent.get(eventId)!.push(receipt);
         }
 
-        console.log('🎫 Grouped tickets by event:', ticketsByEvent.size);
-        
         // Process each event's tickets individually with sequence numbers
         for (const [eventId, receipts] of ticketsByEvent) {
           const event = ticketEvents.find((e) => e.id === eventId);
@@ -380,8 +365,8 @@ export function useUserRSVPs() {
                 if (amountTag) {
                   amount = Math.floor(parseInt(amountTag[1]) / 1000); // Convert from millisats to sats
                 }
-              } catch (error) {
-                console.error("Error parsing zap request:", error);
+              } catch {
+                // Failed to parse zap request amount
               }
             }
 
@@ -400,33 +385,76 @@ export function useUserRSVPs() {
         }
       }
 
-            // Combine RSVPs and tickets, then split into upcoming and past events
-            const allItems = [...processedRSVPs, ...processedTickets];
-            console.log('📊 Final results:', {
-              processedRSVPs: processedRSVPs.length,
-              processedTickets: processedTickets.length,
-              totalItems: allItems.length
-            });
+      // Process user-created events
+      const processedCreated: UserCreatedEvent[] = [];
+      // Track event IDs that already appear via RSVP or ticket to avoid duplicates
+      const seenEventIds = new Set<string>();
+      for (const item of processedRSVPs) seenEventIds.add(item.event.id);
+      for (const item of processedTickets) seenEventIds.add(item.event.id);
 
-            const upcoming = allItems
+      for (const event of createdEvents) {
+        if (seenEventIds.has(event.id)) continue;
+
+        const title = event.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled";
+        const startTag = event.kind === 30311 || event.kind === 30312 || event.kind === 30313
+          ? event.tags.find((tag) => tag[0] === "starts")?.[1]
+          : event.tags.find((tag) => tag[0] === "start")?.[1];
+
+        let eventDate: Date;
+        try {
+          if (!startTag || startTag === "0") {
+            eventDate = new Date(event.created_at * 1000);
+          } else if (startTag.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            eventDate = new Date(startTag + "T00:00:00Z");
+          } else if (startTag.match(/^\d{10}$/)) {
+            eventDate = new Date(parseInt(startTag) * 1000);
+          } else if (startTag.match(/^\d{13}$/)) {
+            eventDate = new Date(parseInt(startTag));
+          } else {
+            eventDate = new Date(event.created_at * 1000);
+          }
+          if (isNaN(eventDate.getTime())) continue;
+        } catch {
+          continue;
+        }
+
+        // Filter out events with d-tags containing "booking-" (internal)
+        const dTag = event.tags.find((tag) => tag[0] === "d")?.[1];
+        if (dTag?.includes("booking-")) continue;
+
+        processedCreated.push({
+          event,
+          eventTitle: title,
+          eventDate,
+          eventStartTime: startTag,
+          isCreated: true,
+        });
+      }
+
+      // Combine RSVPs, tickets, and created events
+      const allItems: (UserRSVPWithEvent | UserTicketWithEvent | UserCreatedEvent)[] = [
+        ...processedRSVPs,
+        ...processedTickets,
+        ...processedCreated,
+      ];
+
+      const upcoming = allItems
         .filter(item => item.eventDate >= now)
         .sort((a, b) => a.eventDate.getTime() - b.eventDate.getTime());
 
-            const past = allItems
+      const past = allItems
         .filter(item => item.eventDate < now)
         .sort((a, b) => b.eventDate.getTime() - a.eventDate.getTime());
 
-            console.log('📅 Final counts:', { upcoming: upcoming.length, past: past.length });
-
       return { upcoming, past };
     },
-    enabled: !!rsvps.length || !!zapReceipts.length,
+    enabled: !!rsvps.length || !!zapReceipts.length || !!createdEvents.length,
     staleTime: 30000,
   });
 
   return {
     data: processedQuery.data,
-    isLoading: isLoadingRSVPs || isLoadingRsvpEvents || isLoadingZapReceipts || isLoadingTicketEvents || processedQuery.isLoading,
+    isLoading: isLoadingRSVPs || isLoadingRsvpEvents || isLoadingZapReceipts || isLoadingTicketEvents || isLoadingCreatedEvents || processedQuery.isLoading,
     error: processedQuery.error,
   };
 }

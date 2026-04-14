@@ -12,6 +12,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { X } from "lucide-react";
 import { genUserName } from "@/lib/genUserName";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import type { Participant } from "./ParticipantSearch";
 
 interface ParticipantItemProps {
@@ -39,12 +40,13 @@ export const ParticipantItem = memo(function ParticipantItem({ participant, onRo
   // Use loaded metadata if available, otherwise fall back to participant metadata
   const metadata = authorData?.metadata || participant.metadata;
   const displayName = metadata?.name || metadata?.display_name || genUserName(participant.pubkey);
+  const shape = getAvatarShape(metadata);
 
   return (
     <Card className="p-0">
       <CardContent className="p-3">
         <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10">
+          <Avatar className="h-10 w-10" shape={shape}>
             <AvatarImage src={metadata?.picture} />
             <AvatarFallback className="text-sm">
               {displayName.slice(0, 2).toUpperCase()}

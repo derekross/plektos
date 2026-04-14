@@ -1,5 +1,6 @@
 import { useMuteList } from "@/hooks/useMuteList";
 import { useAuthor } from "@/hooks/useAuthor";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,6 +16,7 @@ function MutedUserItem({ pubkey }: { pubkey: string }) {
   const metadata = author.data?.metadata;
   const displayName = metadata?.name || metadata?.display_name || pubkey.slice(0, 8);
   const profileImage = metadata?.picture;
+  const shape = getAvatarShape(metadata);
   const muteReason = getMuteReason(pubkey);
 
   const handleUnmute = async () => {
@@ -33,7 +35,7 @@ function MutedUserItem({ pubkey }: { pubkey: string }) {
   return (
     <div className="flex items-center justify-between p-3 border rounded-lg">
       <div className="flex items-center gap-3">
-        <Avatar className="h-10 w-10">
+        <Avatar className="h-10 w-10" shape={shape}>
           <AvatarImage src={profileImage} alt={displayName} />
           <AvatarFallback>{displayName.slice(0, 2)}</AvatarFallback>
         </Avatar>

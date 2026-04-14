@@ -32,7 +32,7 @@
     --input: 320 20% 90%;
     --ring: 280 100% 70%;
 
-    --radius: 1rem;
+    --radius: 1.25rem;
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -268,4 +268,18 @@
 .animate-gradient-underline {
   background-size: 200% 100%;
   animation: gradient-underline 2.5s infinite alternate;
+}
+
+/* Ditto design language */
+.glow-primary {
+  box-shadow: 0 0 12px hsl(var(--primary) / 0.3), 0 0 4px hsl(var(--primary) / 0.1);
+}
+
+.glow-primary-hover:hover {
+  box-shadow: 0 0 16px hsl(var(--primary) / 0.4), 0 0 6px hsl(var(--primary) / 0.15);
+}
+
+/* Title font support for themes */
+.font-title {
+  font-family: var(--title-font-family, 'Outfit Variable', Outfit, system-ui, sans-serif);
 }

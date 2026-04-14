@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuthor } from "@/hooks/useAuthor";
 import { genUserName } from "@/lib/genUserName";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import {
   Tooltip,
   TooltipContent,
@@ -40,6 +41,7 @@ const RSVPAvatar = memo(function RSVPAvatar({ pubkey }: { pubkey: string }) {
   const { data: author } = useAuthor(pubkey);
   const displayName = author?.metadata?.name ?? genUserName(pubkey);
   const avatarUrl = author?.metadata?.picture;
+  const shape = getAvatarShape(author?.metadata);
   const npub = nip19.npubEncode(pubkey);
 
   return (
@@ -47,7 +49,7 @@ const RSVPAvatar = memo(function RSVPAvatar({ pubkey }: { pubkey: string }) {
       <Tooltip>
         <TooltipTrigger asChild>
           <Link to={`/profile/${npub}`} className="block">
-            <Avatar className="h-6 w-6 sm:h-8 sm:w-8 border-2 border-background hover:border-primary/50 transition-colors cursor-pointer">
+            <Avatar className="h-6 w-6 sm:h-8 sm:w-8 border-2 border-background hover:border-primary/50 transition-colors cursor-pointer" shape={shape}>
               <AvatarImage src={avatarUrl} alt={displayName} />
               <AvatarFallback className="text-xs">
                 {displayName.slice(0, 2).toUpperCase()}

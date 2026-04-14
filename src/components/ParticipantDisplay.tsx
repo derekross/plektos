@@ -10,6 +10,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { genUserName } from "@/lib/genUserName";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { nip19 } from "nostr-tools";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -28,13 +29,14 @@ function ParticipantCard({ participant }: { participant: EventParticipant }) {
   const { data: authorData } = useAuthor(participant.pubkey);
   const metadata = authorData?.metadata;
   const displayName = metadata?.name || metadata?.display_name || genUserName(participant.pubkey);
+  const shape = getAvatarShape(metadata);
   const npub = nip19.npubEncode(participant.pubkey);
 
   return (
     <Card className="p-0">
       <CardContent className="p-2 sm:p-3">
         <div className="flex items-center gap-2 sm:gap-3">
-          <Avatar className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0">
+          <Avatar className="h-8 w-8 sm:h-10 sm:w-10 flex-shrink-0" shape={shape}>
             <AvatarImage src={metadata?.picture} />
             <AvatarFallback className="text-xs sm:text-sm">
               {displayName.slice(0, 2).toUpperCase()}

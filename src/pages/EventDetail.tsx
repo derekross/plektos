@@ -45,6 +45,9 @@ import { decodeEventIdentifier } from "@/lib/nip19Utils";
 import { UserActionsMenu } from "@/components/UserActionsMenu";
 import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 import { cn, sanitizeUrl } from "@/lib/utils";
+import { getAvatarShape } from "@/lib/avatarShapes";
+import { useEventTheme } from "@/hooks/useEventTheme";
+import { EventThemeProvider } from "@/components/EventThemeProvider";
 import { isLiveEvent, getViewingUrl, getLiveEventStatus } from "@/lib/liveEventUtils";
 import { getPlatformIcon, isLiveEventType } from "@/lib/platformIcons";
 import { ParticipantDisplay } from "@/components/ParticipantDisplay";
@@ -81,6 +84,7 @@ function EventAuthor({ pubkey }: { pubkey: string }) {
   const displayName =
     metadata?.name || metadata?.display_name || pubkey.slice(0, 8);
   const profileImage = metadata?.picture;
+  const shape = getAvatarShape(metadata);
 
   // Create npub address for the profile link
   const npub = nip19.npubEncode(pubkey);
@@ -91,7 +95,7 @@ function EventAuthor({ pubkey }: { pubkey: string }) {
         to={`/profile/${npub}`}
         className="flex items-center gap-2 hover:opacity-80 transition-opacity"
       >
-        <Avatar className="h-6 w-6">
+        <Avatar className="h-6 w-6" shape={shape}>
           <AvatarImage src={profileImage} alt={displayName} />
           <AvatarFallback>{displayName.slice(0, 2)}</AvatarFallback>
         </Avatar>
@@ -152,6 +156,9 @@ export function EventDetail() {
   }
 
   const event = singleEvent as DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting;
+
+  // Extract event theme (Ditto themes via c/f/bg tags)
+  const eventTheme = useEventTheme(event);
 
   // Extract event participants from p tags (NIP-52)
   const eventParticipants = event?.tags
@@ -337,7 +344,7 @@ export function EventDetail() {
     }
   };
 
-  return (
+  const content = (
     <div className="container max-w-4xl px-0 sm:px-4 py-2 sm:py-8">
       <Card className="rounded-none sm:rounded-lg">
         <div className="aspect-video w-full overflow-hidden">
@@ -697,4 +704,11 @@ export function EventDetail() {
       )}
     </div>
   );
+
+  // Wrap in EventThemeProvider if the event has a custom theme
+  if (eventTheme) {
+    return <EventThemeProvider theme={eventTheme}>{content}</EventThemeProvider>;
+  }
+
+  return content;
 }

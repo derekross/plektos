@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNostr } from "@nostrify/react";
 import { useAuthor } from "@/hooks/useAuthor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { formatAmount } from "@/lib/lightning";
 import { nip19 } from "nostr-tools";
 import type { NostrEvent } from "@nostrify/nostrify";
@@ -102,11 +103,12 @@ function ZapReceipt({
   const displayName =
     metadata?.name || metadata?.display_name || zapRequest.pubkey.slice(0, 8);
   const profileImage = metadata?.picture;
+  const shape = getAvatarShape(metadata);
   const npub = nip19.npubEncode(zapRequest.pubkey);
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border">
-      <Avatar className="h-10 w-10">
+      <Avatar className="h-10 w-10" shape={shape}>
         <AvatarImage src={profileImage} alt={displayName} />
         <AvatarFallback>{displayName.slice(0, 2)}</AvatarFallback>
       </Avatar>

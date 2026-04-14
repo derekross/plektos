@@ -11,6 +11,7 @@ import { useNotifications } from "@/contexts/NotificationContext";
 import { useAuthor } from "@/hooks/useAuthor";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { formatDistance } from "date-fns";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -29,11 +30,13 @@ function NotificationItem({
 }: NotificationItemProps) {
   const navigate = useNavigate();
   const author = useAuthor(notification.fromPubkey);
+  const metadata = author.data?.metadata;
   const authorName =
-    author.data?.metadata?.display_name ||
-    author.data?.metadata?.name ||
+    metadata?.display_name ||
+    metadata?.name ||
     `${notification.fromPubkey.slice(0, 8)}...`;
-  const authorImage = author.data?.metadata?.picture;
+  const authorImage = metadata?.picture;
+  const shape = getAvatarShape(metadata);
 
   const handleClick = () => {
     console.log(
@@ -115,7 +118,7 @@ function NotificationItem({
       )}
       onClick={handleClick}
     >
-      <Avatar className="h-8 w-8 flex-shrink-0">
+      <Avatar className="h-8 w-8 flex-shrink-0" shape={shape}>
         <AvatarImage src={authorImage} alt={authorName} />
         <AvatarFallback className="text-xs">
           {authorName.slice(0, 2).toUpperCase()}

@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Camera, User, FileText, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Camera, User, FileText, Sparkles, ArrowRight, ArrowLeft, Star } from 'lucide-react';
+import { ShapePicker } from '@/components/ShapePicker';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -48,8 +49,9 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
   onOpenChange,
   onComplete,
 }) => {
-  const [step, setStep] = useState<'name' | 'avatar' | 'bio' | 'publishing'>('name');
+  const [step, setStep] = useState<'name' | 'avatar' | 'shape' | 'bio' | 'publishing'>('name');
   const [isLoading, setIsLoading] = useState(false);
+  const [shape, setShape] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { user } = useCurrentUser();
@@ -102,6 +104,8 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
       
       setStep('avatar');
     } else if (step === 'avatar') {
+      setStep('shape');
+    } else if (step === 'shape') {
       setStep('bio');
     } else if (step === 'bio') {
       handleFinish();
@@ -111,8 +115,10 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
   const handleBack = () => {
     if (step === 'avatar') {
       setStep('name');
-    } else if (step === 'bio') {
+    } else if (step === 'shape') {
       setStep('avatar');
+    } else if (step === 'bio') {
+      setStep('shape');
     }
   };
 
@@ -128,16 +134,21 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
     try {
       // Prepare profile data
       const formData = form.getValues();
-      const profileData = {
+      const profileData: Record<string, string> = {
         name: formData.name,
         about: formData.about || '',
         picture: formData.picture || '',
       };
 
+      // Include shape if set
+      if (shape) {
+        profileData.shape = shape;
+      }
+
       // Remove empty values
       Object.keys(profileData).forEach(key => {
-        if (!profileData[key as keyof typeof profileData]) {
-          delete profileData[key as keyof typeof profileData];
+        if (!profileData[key]) {
+          delete profileData[key];
         }
       });
 
@@ -171,6 +182,8 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
         return <User className="w-8 h-8 text-primary" />;
       case 'avatar':
         return <Camera className="w-8 h-8 text-primary" />;
+      case 'shape':
+        return <Star className="w-8 h-8 text-primary" />;
       case 'bio':
         return <FileText className="w-8 h-8 text-primary" />;
       case 'publishing':
@@ -186,6 +199,8 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
         return "What's your name?";
       case 'avatar':
         return 'Add a profile picture';
+      case 'shape':
+        return 'Choose your vibe';
       case 'bio':
         return 'Tell us about yourself';
       case 'publishing':
@@ -201,6 +216,8 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
         return 'This is how others will see you on Plektos';
       case 'avatar':
         return 'Help others recognize you (optional)';
+      case 'shape':
+        return 'Pick an emoji to shape your avatar — make it uniquely you';
       case 'bio':
         return 'Share what makes you unique (optional)';
       case 'publishing':
@@ -241,13 +258,13 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
           {/* Progress indicator */}
           <div className="flex items-center justify-center mb-8">
             <div className="flex space-x-2">
-              {['name', 'avatar', 'bio'].map((stepName, index) => (
+              {['name', 'avatar', 'shape', 'bio'].map((stepName, index) => (
                 <div
                   key={stepName}
                   className={`w-2 h-2 rounded-full transition-colors ${
                     stepName === step
                       ? 'bg-primary'
-                      : ['name', 'avatar', 'bio'].indexOf(step) > index
+                      : ['name', 'avatar', 'shape', 'bio'].indexOf(step) > index
                       ? 'bg-primary/60'
                       : 'bg-muted'
                   }`}
@@ -347,6 +364,15 @@ export const OnboardingDialog: React.FC<OnboardingDialogProps> = ({
                       You can skip this step and add a photo later in your profile settings
                     </p>
                   </div>
+                </div>
+              )}
+
+              {step === 'shape' && (
+                <div className="space-y-4 animate-slide-up">
+                  <ShapePicker value={shape} onChange={setShape} />
+                  <p className="text-xs text-muted-foreground text-center">
+                    You can skip this step and keep the default circle
+                  </p>
                 </div>
               )}
 

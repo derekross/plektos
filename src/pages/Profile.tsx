@@ -3,6 +3,8 @@ import { useNostr } from "@nostrify/react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthor } from "@/hooks/useAuthor";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useProfileTheme } from "@/hooks/useProfileTheme";
+import { getAvatarShape } from "@/lib/avatarShapes";
 import { createEventIdentifier } from "@/lib/nip19Utils";
 import { nip19 } from "nostr-tools";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +23,7 @@ import { Link } from "react-router-dom";
 import { UserActionsMenu } from "@/components/UserActionsMenu";
 import { ZappableLightningAddress } from "@/components/ZappableLightningAddress";
 import { EditProfileForm } from "@/components/EditProfileForm";
+import { EventThemeProvider } from "@/components/EventThemeProvider";
 import { ExternalLink, Loader2, Settings, PartyPopper, Users } from "lucide-react";
 import { TimezoneDisplay } from "@/components/TimezoneDisplay";
 import type {
@@ -53,6 +56,7 @@ export function Profile() {
 
   // Primary author data - show this ASAP
   const author = useAuthor(pubkey);
+  const { data: profileTheme } = useProfileTheme(pubkey);
 
   // Secondary data with timeouts - don't block the UI
   const {
@@ -121,6 +125,7 @@ export function Profile() {
   const displayName =
     metadata?.name || metadata?.display_name || pubkey?.slice(0, 8) || "";
   const profileImage = metadata?.picture;
+  const shape = getAvatarShape(metadata);
   const about = metadata?.about;
   const website = metadata?.website;
   const nip05 = metadata?.nip05;
@@ -142,10 +147,30 @@ export function Profile() {
   }
 
   // Show profile info immediately when available, even if other sections are loading
-  return (
+  const content = (
     <div className="container px-0 sm:px-4 py-2 sm:py-6 space-y-3 sm:space-y-6">
       {/* Profile Info Card */}
-      <Card className="rounded-none sm:rounded-lg">
+      <Card className="rounded-none sm:rounded-3xl overflow-hidden">
+        {/* Banner */}
+        {metadata?.banner ? (
+          <div className="aspect-[3/1] w-full overflow-hidden">
+            <img
+              src={metadata.banner}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          </div>
+        ) : (
+          <div
+            className="aspect-[3/1] w-full"
+            style={{
+              background: profileTheme
+                ? `linear-gradient(135deg, hsl(${profileTheme.colors.primary}) 0%, hsl(${profileTheme.colors.background}) 100%)`
+                : "linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.4) 100%)",
+            }}
+          />
+        )}
+
         <CardHeader className="relative p-3 sm:p-6">
           {/* Action menu positioned absolutely in top right corner */}
           {user && !isOwnProfile && pubkey && (
@@ -177,8 +202,9 @@ export function Profile() {
             </div>
           )}
 
-          <div className="flex items-center gap-4">
-            <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
+          {/* Avatar overlapping the banner */}
+          <div className="-mt-14 sm:-mt-16 mb-3">
+            <Avatar className="h-20 w-20 sm:h-24 sm:w-24 ring-4 ring-background" shape={shape}>
               {author.isLoading ? (
                 <div className="w-full h-full bg-muted animate-pulse rounded-full" />
               ) : (
@@ -190,39 +216,40 @@ export function Profile() {
                 </>
               )}
             </Avatar>
-            <div className="space-y-2">
-              <CardTitle className="text-xl sm:text-2xl pr-12 sm:pr-0">
-                {author.isLoading ? (
-                  <div className="h-6 w-32 bg-muted animate-pulse rounded" />
-                ) : (
-                  displayName || "Unknown User"
-                )}
-              </CardTitle>
-              <div className="flex flex-wrap gap-2">
-                {author.isLoading ? (
-                  <div className="h-5 w-24 bg-muted animate-pulse rounded" />
-                ) : (
-                  <>
-                    {nip05 && (
-                      <Badge variant="secondary" className="font-mono text-xs">
-                        ✓ {nip05}
-                      </Badge>
-                    )}
-                    {lightningAddress && user && !isOwnProfile ? (
-                      <ZappableLightningAddress
-                        lightningAddress={lightningAddress}
-                        pubkey={pubkey}
-                        displayName={displayName}
-                        eventKind={0}
-                      />
-                    ) : lightningAddress ? (
-                      <Badge variant="outline" className="font-mono text-xs">
-                        ⚡ {lightningAddress}
-                      </Badge>
-                    ) : null}
-                  </>
-                )}
-              </div>
+          </div>
+
+          <div className="space-y-2">
+            <CardTitle className="text-xl sm:text-2xl pr-12 sm:pr-0">
+              {author.isLoading ? (
+                <div className="h-6 w-32 bg-muted animate-pulse rounded" />
+              ) : (
+                displayName || "Unknown User"
+              )}
+            </CardTitle>
+            <div className="flex flex-wrap gap-2">
+              {author.isLoading ? (
+                <div className="h-5 w-24 bg-muted animate-pulse rounded" />
+              ) : (
+                <>
+                  {nip05 && (
+                    <Badge variant="secondary" className="font-mono text-xs">
+                      ✓ {nip05}
+                    </Badge>
+                  )}
+                  {lightningAddress && user && !isOwnProfile ? (
+                    <ZappableLightningAddress
+                      lightningAddress={lightningAddress}
+                      pubkey={pubkey}
+                      displayName={displayName}
+                      eventKind={0}
+                    />
+                  ) : lightningAddress ? (
+                    <Badge variant="outline" className="font-mono text-xs">
+                      ⚡ {lightningAddress}
+                    </Badge>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -423,4 +450,10 @@ export function Profile() {
       </Tabs>
     </div>
   );
+
+  if (profileTheme) {
+    return <EventThemeProvider theme={profileTheme}>{content}</EventThemeProvider>;
+  }
+
+  return content;
 }
