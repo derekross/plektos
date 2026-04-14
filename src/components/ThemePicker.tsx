@@ -1,10 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Globe, Palette, X, Save, Loader2 } from "lucide-react";
+import { Sparkles, Globe, Palette, X, Save, Loader2, ImagePlus, Trash2 } from "lucide-react";
 import { sanitizeUrl } from "@/lib/utils";
+import { useBlossomUpload } from "@/hooks/useBlossomUpload";
 import { ThemePreview } from "@/components/ThemePreview";
 import { ScopedTheme } from "@/components/ScopedTheme";
 import {
@@ -50,8 +51,16 @@ export function ThemePicker({ value, onChange }: ThemePickerProps) {
   const [customPrimary, setCustomPrimary] = useState(
     value ? hslStringToHex(value.colors.primary) : "#b84dff",
   );
+  const [customBgImageUrl, setCustomBgImageUrl] = useState(
+    value?.background?.url ?? "",
+  );
+  const [customBgMode, setCustomBgMode] = useState<"cover" | "tile">(
+    value?.background?.mode ?? "cover",
+  );
   const [publishTitle, setPublishTitle] = useState("");
   const [isPublishing, setIsPublishing] = useState(false);
+  const { uploadFile, isUploading: isUploadingBg } = useBlossomUpload();
+  const bgFileInputRef = useRef<HTMLInputElement>(null);
 
   const customTheme: ThemeConfig = {
     colors: {
@@ -59,6 +68,9 @@ export function ThemePicker({ value, onChange }: ThemePickerProps) {
       text: hexToHslString(customText),
       primary: hexToHslString(customPrimary),
     },
+    ...(customBgImageUrl
+      ? { background: { url: customBgImageUrl, mode: customBgMode } }
+      : {}),
   };
 
   const isSelected = useCallback(
@@ -299,25 +311,136 @@ export function ThemePicker({ value, onChange }: ThemePickerProps) {
               </div>
             </div>
 
+            {/* Background image */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Background Image (optional)</Label>
+              {customBgImageUrl ? (
+                <div className="relative rounded-xl overflow-hidden border border-border">
+                  <img
+                    src={sanitizeUrl(customBgImageUrl) || ""}
+                    alt="Theme background"
+                    className="w-full h-20 object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center gap-2 opacity-0 hover:opacity-100 transition-opacity">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setCustomBgMode(customBgMode === "cover" ? "tile" : "cover");
+                      }}
+                      className="h-7 text-xs rounded-lg"
+                    >
+                      {customBgMode === "cover" ? "Cover" : "Tile"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setCustomBgImageUrl("")}
+                      className="h-7 text-xs rounded-lg"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    ref={bgFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const result = await uploadFile(file);
+                        setCustomBgImageUrl(result.url);
+                      } catch {
+                        // Upload error handled by hook
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => bgFileInputRef.current?.click()}
+                    disabled={isUploadingBg}
+                    className="h-8 text-xs rounded-lg flex-1"
+                  >
+                    {isUploadingBg ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <ImagePlus className="h-3 w-3 mr-1" />
+                    )}
+                    Upload Image
+                  </Button>
+                  <Input
+                    placeholder="or paste URL..."
+                    className="h-8 text-xs rounded-lg flex-1"
+                    onBlur={(e) => {
+                      const url = e.target.value.trim();
+                      if (url && sanitizeUrl(url)) {
+                        setCustomBgImageUrl(url);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const url = (e.target as HTMLInputElement).value.trim();
+                        if (url && sanitizeUrl(url)) {
+                          setCustomBgImageUrl(url);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Live preview */}
-            <ScopedTheme colors={customTheme.colors} className="rounded-xl border p-3">
-              <div className="bg-background rounded-lg p-3 space-y-1">
-                <div className="text-sm font-semibold text-foreground">
-                  Live Preview
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Your custom theme colors in action
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <div className="h-6 px-3 rounded-full bg-primary text-primary-foreground text-xs flex items-center">
-                    Primary
+            {(() => {
+              const previewBgUrl = sanitizeUrl(customTheme.background?.url);
+              const previewBgStyle: React.CSSProperties = previewBgUrl
+                ? {
+                    backgroundImage: `url(${previewBgUrl})`,
+                    backgroundSize: customTheme.background?.mode === "tile" ? "auto" : "cover",
+                    backgroundPosition: "center",
+                    backgroundRepeat: customTheme.background?.mode === "tile" ? "repeat" : "no-repeat",
+                  }
+                : {};
+
+              return (
+                <ScopedTheme colors={customTheme.colors} className="rounded-xl border overflow-hidden">
+                  <div
+                    className="relative bg-background p-3 space-y-1"
+                    style={previewBgStyle}
+                  >
+                    {previewBgUrl && (
+                      <div className="absolute inset-0 bg-background/60" />
+                    )}
+                    <div className="relative z-10">
+                      <div className="text-sm font-semibold text-foreground">
+                        Live Preview
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Your custom theme colors in action
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <div className="h-6 px-3 rounded-full bg-primary text-primary-foreground text-xs flex items-center">
+                          Primary
+                        </div>
+                        <div className="h-6 px-3 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center">
+                          Secondary
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="h-6 px-3 rounded-full bg-secondary text-secondary-foreground text-xs flex items-center">
-                    Secondary
-                  </div>
-                </div>
-              </div>
-            </ScopedTheme>
+                </ScopedTheme>
+              );
+            })()}
 
             <div className="flex gap-2">
               <Button
