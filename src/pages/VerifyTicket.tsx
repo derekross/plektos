@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNostrPublish } from "@/hooks/useNostrPublish";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useAuthor } from "@/hooks/useAuthor";
+import { openUrl } from "@/lib/utils";
 import QrScanner from "qr-scanner";
 
 interface TicketData {
@@ -115,7 +116,7 @@ function AttendeeItem({
                 
                 // Navigate to verification page with ticket data
                 const ticketUrl = `${window.location.origin}/verify-ticket?data=${encodeURIComponent(JSON.stringify(ticketData))}`;
-                window.open(ticketUrl, '_blank');
+                openUrl(ticketUrl);
               }}
               className="text-blue-600 hover:text-blue-800 underline font-mono"
             >

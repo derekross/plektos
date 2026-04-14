@@ -212,8 +212,7 @@ export function TimezoneDisplay({
               : null,
         };
       }
-    } catch (error) {
-      console.error("Error formatting event time:", error);
+    } catch {
       return {
         eventTime: "Invalid date",
         localTime: null,

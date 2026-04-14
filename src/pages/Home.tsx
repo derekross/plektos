@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/collapsible";
 import { CalendarIcon, Search, X, Filter, ChevronDown, Grid3X3, Calendar as CalendarViewIcon, Map as MapIcon } from "lucide-react";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeUrl } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import { Badge } from "@/components/ui/badge";
 import { EVENT_CATEGORIES, type EventCategory } from "@/lib/eventCategories";
@@ -68,6 +68,49 @@ export function Home() {
 
   // Get metadata for all authors
   const { data: authorsMetadata = {} } = useAuthorsMetadata(uniquePubkeys);
+
+  // Pre-compute RSVP map: eventId/eventAddress -> deduplicated accepted RSVP count
+  // This avoids O(n*m) filtering inside the render loop (was H1: N+1 issue)
+  const rsvpCountMap = useMemo(() => {
+    const allRSVPs = (allEventsData || []).filter(
+      (e): e is EventRSVP => e.kind === 31925
+    );
+
+    // Group RSVPs by event reference (both e-tag and a-tag)
+    const rsvpsByRef = new Map<string, EventRSVP[]>();
+    for (const rsvp of allRSVPs) {
+      const eTag = rsvp.tags.find((tag) => tag[0] === "e")?.[1];
+      const aTag = rsvp.tags.find((tag) => tag[0] === "a")?.[1];
+      if (eTag) {
+        const existing = rsvpsByRef.get(eTag) || [];
+        existing.push(rsvp);
+        rsvpsByRef.set(eTag, existing);
+      }
+      if (aTag) {
+        const existing = rsvpsByRef.get(aTag) || [];
+        existing.push(rsvp);
+        rsvpsByRef.set(aTag, existing);
+      }
+    }
+
+    // Deduplicate per-pubkey (keep latest) and count accepted for each ref
+    const countMap = new Map<string, number>();
+    for (const [ref, rsvps] of rsvpsByRef) {
+      const byPubkey = new Map<string, EventRSVP>();
+      for (const rsvp of rsvps) {
+        const existing = byPubkey.get(rsvp.pubkey);
+        if (!existing || rsvp.created_at > existing.created_at) {
+          byPubkey.set(rsvp.pubkey, rsvp);
+        }
+      }
+      const accepted = Array.from(byPubkey.values()).filter(
+        (r) => r.tags.find((tag) => tag[0] === "status")?.[1] === "accepted"
+      );
+      countMap.set(ref, accepted.length);
+    }
+
+    return countMap;
+  }, [allEventsData]);
   const [showPastEvents, setShowPastEvents] = useState(false);
   const [keywordFilter, setKeywordFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -726,38 +769,15 @@ export function Home() {
               const lightningAddress = event.tags.find((tag) => tag[0] === "lud16")?.[1];
               const isPaidEvent = price && lightningAddress;
               
-              // Calculate attendee count from RSVPs
-              const eventAddress = event.tags.find((tag) => tag[0] === "d")?.[1] 
-                ? `${event.kind}:${event.pubkey}:${event.tags.find((tag) => tag[0] === "d")?.[1]}` 
+              // Calculate attendee count from pre-computed RSVP map (O(1) lookup)
+              const dTag = event.tags.find((tag) => tag[0] === "d")?.[1];
+              const eventAddress = dTag
+                ? `${event.kind}:${event.pubkey}:${dTag}`
                 : null;
-              const eventId = event.id;
-              
-              // Get RSVPs for this event from allEventsData
-              const rsvpEvents = (allEventsData || [])
-                .filter((e): e is EventRSVP => e.kind === 31925)
-                .filter((e) => {
-                  // Match by event ID (e tag) for current version
-                  const hasEventId = e.tags.some((tag) => tag[0] === "e" && tag[1] === eventId);
-                  // Match by address coordinate (a tag) for all versions of replaceable events
-                  const hasAddress = eventAddress && e.tags.some((tag) => tag[0] === "a" && tag[1] === eventAddress);
-                  return hasEventId || hasAddress;
-                });
-              
-              // Get most recent RSVP for each user
-              const latestRSVPs = rsvpEvents.reduce((acc, curr) => {
-                const existingRSVP = acc.find((e) => e.pubkey === curr.pubkey);
-                if (!existingRSVP || curr.created_at > existingRSVP.created_at) {
-                  const filtered = acc.filter((e) => e.pubkey !== curr.pubkey);
-                  return [...filtered, curr];
-                }
-                return acc;
-              }, [] as EventRSVP[]);
-              
-              // Count accepted RSVPs
-              const acceptedRSVPs = latestRSVPs.filter(
-                (e) => e.tags.find((tag) => tag[0] === "status")?.[1] === "accepted"
+              const attendeeCount = Math.max(
+                rsvpCountMap.get(event.id) || 0,
+                eventAddress ? (rsvpCountMap.get(eventAddress) || 0) : 0
               );
-              const attendeeCount = acceptedRSVPs.length;
               
               // Check if this is a live event
               const live = isLiveEvent(event);
@@ -780,7 +800,7 @@ export function Home() {
                     <Card className="h-full transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/20 overflow-hidden rounded-none sm:rounded-3xl border-2 border-transparent hover:border-primary/20 group">
                     <div className="aspect-video w-full overflow-hidden relative">
                       <img
-                        src={imageUrl || "/default-calendar.png"}
+                        src={sanitizeUrl(imageUrl) || "/default-calendar.png"}
                         alt={title}
                         loading="lazy"
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
@@ -850,7 +870,7 @@ export function Home() {
                           <div className="flex items-center gap-2 text-sm text-muted-foreground bg-amber-50 dark:bg-amber-950/20 p-2 rounded-xl border border-amber-200 dark:border-amber-800">
                             <span className="text-amber-600 dark:text-amber-400">🎟️</span>
                             <span className="font-medium text-amber-800 dark:text-amber-200">
-                              {formatAmount(parseInt(price))}
+                              {formatAmount(parseInt(price, 10) || 0)}
                             </span>
                           </div>
                         ) : (

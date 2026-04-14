@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Calendar, Download, ExternalLink } from "lucide-react";
 import { downloadICS, openInCalendar, getCalendarOptions } from "@/lib/icsExport";
+import { openUrl } from "@/lib/utils";
 import type { DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting } from "@/lib/eventTypes";
 
 interface CalendarOptionsProps {
@@ -37,7 +38,7 @@ export function CalendarOptions({ event, className }: CalendarOptionsProps) {
   const handleCalendarProvider = (provider: 'google' | 'outlook' | 'yahoo' | 'apple') => {
     try {
       const options = getCalendarOptions(event);
-      window.open(options[provider], '_blank');
+      openUrl(options[provider]);
       setIsOpen(false);
     } catch (error) {
       console.error(`Error opening ${provider} calendar:`, error);

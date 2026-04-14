@@ -3,6 +3,7 @@ import { BlossomUploader } from "@nostrify/nostrify/uploaders";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useNostr } from "@nostrify/react";
 import { toast } from "sonner";
+import { sanitizeHttpsUrl } from "@/lib/utils";
 
 export interface UploadResult {
   url: string;
@@ -44,10 +45,11 @@ export function useBlossomUpload() {
         return DEFAULT_SERVERS;
       }
 
-      // Extract and validate server URLs
+      // Extract and validate server URLs (only allow HTTPS)
       const validServers = serverTags
         .map((tag) => tag[1])
         .filter((url) => typeof url === "string" && url.trim() !== "")
+        .filter((url) => sanitizeHttpsUrl(url.trim()) !== undefined)
         .map((url) => {
           const trimmed = url.trim();
           return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
