@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="gA" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0%" stop-color="#eebbff"/>
+      <stop offset="100%" stop-color="#c060f0"/>
+    </linearGradient>
+    <linearGradient id="gB" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c870ff"/>
+      <stop offset="100%" stop-color="#8020cc"/>
+    </linearGradient>
+    <linearGradient id="gC" x1="0.3" y1="1" x2="0.7" y2="0">
+      <stop offset="0%" stop-color="#f5d5ff"/>
+      <stop offset="100%" stop-color="#dd90f8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="108" ry="108" fill="#1a0a2e"/>
+  <linearGradient id="bgs" x1="0" y1="0" x2="0.3" y2="1">
+    <stop offset="0%" stop-color="#221040"/>
+    <stop offset="100%" stop-color="#1a0a2e"/>
+  </linearGradient>
+  <rect width="512" height="512" rx="108" ry="108" fill="url(#bgs)"/>
+
+  <!--
+    Three interlocking people-circles.
+    
+    Geometry (in local coords before transform):
+      Circle centers at 62px from origin, at 90/210/330 degrees:
+        A center: (0, -62)     -> head at (0, -134)
+        B center: (53.7, 31)   -> head at (107.4, 62) [after rotate 120]
+        C center: (-53.7, 31)  -> head at (-107.4, 62) [after rotate 240]
+      
+      Bounding box extremes (including heads at r=20, stroke at 16):
+        Top:    -134 - 36 = -170
+        Bottom: 62 + 72 + 36 = 170  (B/C outer edge + stroke)
+        Left:   -107 - 72 - 36 = -215 (C head side)
+        Right:  107 + 72 + 36 = 215
+      
+      Visual center: (0, 0) — it's actually symmetric.
+      
+      Fitting 430px diameter into 512: scale = 512*0.82/430 ≈ 0.98
+      Just use translate(256,256) scale(1.0) — no offset needed.
+      
+      The perceived leftward lean is because the bottom-left circle (C)
+      has its bright OVER half on the left while B's bright half is 
+      partially hidden. Let me try shifting translate by +5px right.
+  -->
+
+  <g transform="translate(256,273) scale(0.92)">
+
+    <!-- ========== UNDER LAYER ========== -->
+
+    <g transform="rotate(0)">
+      <path d="M0,-134 A72,72 0 0,1 0,10"
+            stroke="#0a0318" stroke-width="32" stroke-linecap="round" fill="none"/>
+      <path d="M0,-134 A72,72 0 0,1 0,10"
+            stroke="url(#gA)" stroke-width="22" stroke-linecap="round" fill="none"/>
+    </g>
+
+    <g transform="rotate(120)">
+      <path d="M0,-134 A72,72 0 0,1 0,10"
+            stroke="#0a0318" stroke-width="32" stroke-linecap="round" fill="none"/>
+      <path d="M0,-134 A72,72 0 0,1 0,10"
+            stroke="url(#gB)" stroke-width="22" stroke-linecap="round" fill="none"/>
+    </g>
+
+    <g transform="rotate(240)">
+      <path d="M0,-134 A72,72 0 0,1 0,10"
+            stroke="#0a0318" stroke-width="32" stroke-linecap="round" fill="none"/>
+      <path d="M0,-134 A72,72 0 0,1 0,10"
+            stroke="url(#gC)" stroke-width="22" stroke-linecap="round" fill="none"/>
+    </g>
+
+    <!-- ========== OVER LAYER ========== -->
+
+    <g transform="rotate(0)">
+      <path d="M0,10 A72,72 0 0,1 0,-134"
+            stroke="#0a0318" stroke-width="32" stroke-linecap="round" fill="none"/>
+      <path d="M0,10 A72,72 0 0,1 0,-134"
+            stroke="url(#gA)" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <circle cx="0" cy="-136" r="20" fill="#0a0318"/>
+      <circle cx="0" cy="-136" r="14" fill="#eebbff"/>
+    </g>
+
+    <g transform="rotate(120)">
+      <path d="M0,10 A72,72 0 0,1 0,-134"
+            stroke="#0a0318" stroke-width="32" stroke-linecap="round" fill="none"/>
+      <path d="M0,10 A72,72 0 0,1 0,-134"
+            stroke="url(#gB)" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <circle cx="0" cy="-136" r="20" fill="#0a0318"/>
+      <circle cx="0" cy="-136" r="14" fill="#c870ff"/>
+    </g>
+
+    <g transform="rotate(240)">
+      <path d="M0,10 A72,72 0 0,1 0,-134"
+            stroke="#0a0318" stroke-width="32" stroke-linecap="round" fill="none"/>
+      <path d="M0,10 A72,72 0 0,1 0,-134"
+            stroke="url(#gC)" stroke-width="22" stroke-linecap="round" fill="none"/>
+      <circle cx="0" cy="-136" r="20" fill="#0a0318"/>
+      <circle cx="0" cy="-136" r="14" fill="#f5d5ff"/>
+    </g>
+
+  </g>
+</svg>
