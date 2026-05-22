@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Search, Plus, Ticket, User, Heart, QrCode } from "lucide-react";
+import { Search, Plus, Ticket, User, Heart, QrCode, CalendarDays } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { LoginArea } from "@/components/auth/LoginArea";
@@ -56,6 +56,12 @@ export function AppNavigation({ children }: AppNavigationProps) {
       icon: Search,
       isActive: location.pathname === "/",
       onClick: handleDiscoverClick,
+    },
+    {
+      href: "/calendars",
+      label: "Calendars",
+      icon: CalendarDays,
+      isActive: location.pathname === "/calendars",
     },
     {
       href: "/feed",

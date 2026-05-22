@@ -27,12 +27,12 @@ interface CalendarEvent {
 export function MonthlyCalendarView({ events: passedEvents, className }: MonthlyCalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [requestedMonths, setRequestedMonths] = useState(new Set<string>());
-  
+
   // Only use calendar-optimized data loading if no events are passed
   const { data: calendarEvents, isLoading } = useCalendarEvents(currentDate);
-  
+
   // Prioritize passed events, fallback to loaded calendar events (filtering out RSVPs)
-  const events = passedEvents ?? (calendarEvents?.filter((event) => 
+  const events = passedEvents ?? (calendarEvents?.filter((event) =>
     event.kind === 31922 || event.kind === 31923 || event.kind === 30311 || event.kind === 30312 || event.kind === 30313
   ) as (DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom)[] ?? []);
 
@@ -56,28 +56,28 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
       }
     } else {
       let timestamp = parseInt(startTime);
-      
+
       // Handle both seconds and milliseconds timestamps
       if (timestamp < 10000000000) {
         // Likely in seconds, convert to milliseconds
         timestamp = timestamp * 1000;
       }
-      
+
       eventDate = new Date(timestamp);
     }
 
-    return eventDate.getFullYear() === currentDate.getFullYear() && 
-           eventDate.getMonth() === currentDate.getMonth();
+    return eventDate.getFullYear() === currentDate.getFullYear() &&
+      eventDate.getMonth() === currentDate.getMonth();
   });
 
   // Get the first day of the current month
   const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
   const lastDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-  
+
   // Get the first day of the calendar grid (might be from previous month)
   const firstDayOfCalendar = new Date(firstDayOfMonth);
   firstDayOfCalendar.setDate(firstDayOfCalendar.getDate() - firstDayOfMonth.getDay());
-  
+
   // Get the last day of the calendar grid (might be from next month)
   const lastDayOfCalendar = new Date(lastDayOfMonth);
   lastDayOfCalendar.setDate(lastDayOfCalendar.getDate() + (6 - lastDayOfMonth.getDay()));
@@ -90,9 +90,16 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
     currentDay.setDate(currentDay.getDate() + 1);
   }
 
+  const getLocalDateKey = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Group events by date
   const eventsByDate = new Map<string, CalendarEvent[]>();
-  
+
   events.forEach((event) => {
     const startTime = (event.kind === 30311 || event.kind === 30312 || event.kind === 30313)
       ? event.tags.find((tag) => tag[0] === "starts")?.[1]
@@ -101,7 +108,7 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
 
     const title = event.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled";
     const eventTimezone = getEventTimezone(event);
-    
+
     let eventDate: Date;
     let formattedTime: string | undefined;
 
@@ -119,28 +126,28 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
     } else {
       // Time-based event, live event, or room meeting
       let timestamp = parseInt(startTime);
-      
+
       // Handle both seconds and milliseconds timestamps
       if (timestamp < 10000000000) {
         // Likely in seconds, convert to milliseconds
         timestamp = timestamp * 1000;
       }
-      
+
       eventDate = new Date(timestamp);
-      
+
       // Format the time in the event's timezone
       formattedTime = formatEventTime(timestamp, eventTimezone);
     }
 
     if (isNaN(eventDate.getTime())) return;
 
-    // Create date key (YYYY-MM-DD)
-    const dateKey = eventDate.toISOString().split('T')[0];
-    
+    // Create date key (YYYY-MM-DD) natively in the browser's local timezone
+    const dateKey = getLocalDateKey(eventDate);
+
     if (!eventsByDate.has(dateKey)) {
       eventsByDate.set(dateKey, []);
     }
-    
+
     eventsByDate.get(dateKey)!.push({
       event,
       title,
@@ -245,7 +252,7 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
 
           {/* Calendar Days */}
           {calendarDays.map((date, index) => {
-            const dateKey = date.toISOString().split('T')[0];
+            const dateKey = getLocalDateKey(date);
             const dayEvents = eventsByDate.get(dateKey) || [];
             const isCurrentMonthDay = isCurrentMonth(date);
             const isTodayDate = isToday(date);
@@ -280,8 +287,8 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
                         calendarEvent.isLiveEvent
                           ? "bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900 dark:text-red-200"
                           : calendarEvent.isTimeEvent
-                          ? "bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200"
-                          : "bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200"
+                            ? "bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200"
+                            : "bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900 dark:text-green-200"
                       )}>
                         {calendarEvent.startTime && (
                           <span className="font-medium">
@@ -294,7 +301,7 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
                       </div>
                     </Link>
                   ))}
-                  
+
                   {/* Show "more" indicator if there are additional events */}
                   {dayEvents.length > 3 && (
                     <div className="text-xs text-muted-foreground px-1">
@@ -323,7 +330,7 @@ export function MonthlyCalendarView({ events: passedEvents, className }: Monthly
               <span>All-day events</span>
             </div>
           </div>
-          
+
           {/* Show load more hint if no events in current month and we haven't requested more */}
           {!hasEventsInCurrentMonth && !requestedMonths.has(currentMonthKey) && !passedEvents && (
             <Button

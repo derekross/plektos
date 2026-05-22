@@ -15,14 +15,11 @@ export function TicketQRCode({ ticket }: TicketQRCodeProps) {
   const [copied, setCopied] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
 
-  // Create a ticket verification URL
+  // Create a ticket verification URL - optimized to only contain essential IDs
+  // Verification page will fetch the rest of the metadata from Nostr
   const ticketData = {
     eventId: ticket.event.id,
     receiptId: ticket.zapReceipt.id,
-    amount: ticket.amount,
-    buyerPubkey: ticket.zapReceipt.pubkey,
-    eventTitle: ticket.eventTitle,
-    purchaseTime: ticket.zapReceipt.created_at,
   };
 
   const ticketUrl = `${window.location.origin}/verify-ticket?data=${encodeURIComponent(JSON.stringify(ticketData))}`;
@@ -87,9 +84,9 @@ export function TicketQRCode({ ticket }: TicketQRCodeProps) {
               <div className="text-xs text-gray-500 mb-2">Scan QR Code at Event</div>
               <div className="w-32 h-32 bg-gray-100 rounded flex items-center justify-center mx-auto">
                 {qrCodeDataUrl ? (
-                  <img 
-                    src={qrCodeDataUrl} 
-                    alt="Ticket QR Code" 
+                  <img
+                    src={qrCodeDataUrl}
+                    alt="Ticket QR Code"
                     className="w-full h-full object-contain"
                   />
                 ) : (

@@ -1,5 +1,7 @@
 import { useEvents } from "@/lib/eventUtils";
 import { useMuteList } from "@/hooks/useMuteList";
+import { useNostr } from "@nostrify/react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthorsMetadata } from "@/hooks/useAuthorsMetadata";
 import {
   Card,
@@ -29,7 +31,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { CalendarIcon, Search, X, Filter, ChevronDown, Grid3X3, Calendar as CalendarViewIcon, Map as MapIcon } from "lucide-react";
+import { CalendarIcon, Search, X, Filter, ChevronDown, Grid3X3, Calendar as CalendarViewIcon, Map as MapIcon, CalendarDays, Users, PartyPopper } from "lucide-react";
 import { format } from "date-fns";
 import { cn, sanitizeUrl } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
@@ -48,7 +50,7 @@ import { parseThemeFromTags, hslStringToHex } from "@/lib/themes";
 
 export function Home() {
   const [viewMode, setViewMode] = useState<"grid" | "calendar" | "map">("grid");
-  
+
   // Use regular loading for both views - simpler and more reliable
   const { data: allEventsData, isLoading, error } = useEvents({
     limit: 500, // Higher limit to get more events
@@ -59,8 +61,24 @@ export function Home() {
 
   // State for client-side pagination in grid view
   const [displayedEventCount, setDisplayedEventCount] = useState(50);
-  
+
+  const { nostr } = useNostr();
+  const { data: globalRsvps = [], isLoading: isLoadingGlobalRsvps } = useQuery({
+    queryKey: ["globalTotalRsvps"],
+    queryFn: async ({ signal }) => {
+      const events = await nostr.query(
+        [{ kinds: [31925], limit: 5000 }],
+        { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) }
+      );
+      return events;
+    },
+    staleTime: 60000,
+  });
+
   const allEvents = useMemo(() => allEventsData || [], [allEventsData]);
+  const totalRSVPs = useMemo(() => {
+    return globalRsvps.filter((e: any) => e.tags.find((t: any) => t[0] === "status")?.[1] === "accepted").length;
+  }, [globalRsvps]);
 
   // Get unique pubkeys from all events for metadata lookup
   const uniquePubkeys = useMemo(() => {
@@ -144,7 +162,7 @@ export function Home() {
         ? event.tags.find((tag) => tag[0] === "starts")?.[1]
         : event.tags.find((tag) => tag[0] === "start")?.[1];
       const endTime = event.tags.find((tag) => tag[0] === "end")?.[1] ||
-                      event.tags.find((tag) => tag[0] === "ends")?.[1];
+        event.tags.find((tag) => tag[0] === "ends")?.[1];
       if (!startTime) return false;
 
       let eventStart: number;
@@ -283,25 +301,25 @@ export function Home() {
       // Filter by keyword (location, username, title, description)
       if (keywordFilter) {
         const keyword = keywordFilter.toLowerCase();
-        
+
         // Get event fields to search
         const location = event.tags.find((tag) => tag[0] === "location")?.[1]?.toLowerCase() || "";
         const title = event.tags.find((tag) => tag[0] === "title")?.[1]?.toLowerCase() || "";
         const description = event.content.toLowerCase();
-        
+
         // Get author metadata for username search
         const authorMetadata = authorsMetadata[event.pubkey];
         const username = authorMetadata?.name?.toLowerCase() || "";
         const displayName = authorMetadata?.display_name?.toLowerCase() || "";
-        
+
         // Check if keyword matches any of these fields
-        const matchesKeyword = 
+        const matchesKeyword =
           location.includes(keyword) ||
           title.includes(keyword) ||
           description.includes(keyword) ||
           username.includes(keyword) ||
           displayName.includes(keyword);
-          
+
         if (!matchesKeyword) return false;
       }
 
@@ -332,12 +350,12 @@ export function Home() {
   // Apply sorting - either by distance or by time
   const sortedEvents = useMemo(() => {
     if (!allFilteredEvents) return [];
-    
+
     if (sortByDistance && locationCoords) {
       // Sort by distance from selected location
       return sortEventsByDistance(allFilteredEvents, locationCoords);
     }
-    
+
     // Default: sort by start time
     return [...allFilteredEvents].sort((a, b) => {
       const getEventStartTime = (event: DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting | InteractiveRoom) => {
@@ -387,7 +405,7 @@ export function Home() {
 
   // For grid view, limit the displayed events for pagination
   const filteredEvents = viewMode === "calendar" || viewMode === "map"
-    ? sortedEvents 
+    ? sortedEvents
     : sortedEvents?.slice(0, displayedEventCount);
 
   const clearFilters = () => {
@@ -412,7 +430,7 @@ export function Home() {
 
   // Load more functionality for grid view
   const canLoadMore = viewMode === "grid" && sortedEvents && displayedEventCount < sortedEvents.length;
-  
+
   const loadMoreEvents = () => {
     setDisplayedEventCount(prev => prev + 50);
   };
@@ -422,7 +440,7 @@ export function Home() {
   const lastEventElementRef = useCallback((node: HTMLElement | null) => {
     if (isLoading) return;
     if (observer.current) observer.current.disconnect();
-    
+
     observer.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && canLoadMore) {
         loadMoreEvents();
@@ -431,7 +449,7 @@ export function Home() {
       threshold: 0.1,
       rootMargin: '100px'
     });
-    
+
     if (node) observer.current.observe(node);
   }, [isLoading, canLoadMore]);
 
@@ -458,7 +476,7 @@ export function Home() {
               Find your next adventure, connect with your community
             </p>
           </div>
-          
+
           {/* View Mode Toggle */}
           <ToggleGroup
             type="single"
@@ -468,25 +486,25 @@ export function Home() {
             }}
             className="justify-start sm:justify-end bg-muted/50 rounded-2xl p-1"
           >
-            <ToggleGroupItem 
-              value="grid" 
-              aria-label="Grid view" 
+            <ToggleGroupItem
+              value="grid"
+              aria-label="Grid view"
               className="gap-2 rounded-xl data-[state=on]:bg-primary data-[state=on]:text-primary-foreground transition-all duration-200"
             >
               <Grid3X3 className="h-4 w-4" />
               <span className="hidden sm:inline font-medium">Grid</span>
             </ToggleGroupItem>
-            <ToggleGroupItem 
-              value="calendar" 
-              aria-label="Calendar view" 
+            <ToggleGroupItem
+              value="calendar"
+              aria-label="Calendar view"
               className="gap-2 rounded-xl data-[state=on]:bg-primary data-[state=on]:text-primary-foreground transition-all duration-200"
             >
               <CalendarViewIcon className="h-4 w-4" />
               <span className="hidden sm:inline font-medium">Calendar</span>
             </ToggleGroupItem>
-            <ToggleGroupItem 
-              value="map" 
-              aria-label="Map view" 
+            <ToggleGroupItem
+              value="map"
+              aria-label="Map view"
               className="gap-2 rounded-xl data-[state=on]:bg-primary data-[state=on]:text-primary-foreground transition-all duration-200"
             >
               <MapIcon className="h-4 w-4" />
@@ -495,6 +513,100 @@ export function Home() {
           </ToggleGroup>
         </div>
       </div>
+
+      {/* Global Stats Overview */}
+      {calendarEvents && calendarEvents.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
+          <Card className="rounded-2xl border-none bg-gradient-to-br from-primary/10 to-transparent shadow-sm">
+            <CardContent className="p-4 sm:p-6 flex flex-col items-center sm:items-start space-y-2">
+              <div className="p-3 bg-primary/20 rounded-xl mb-1">
+                <CalendarDays className="h-6 w-6 text-primary" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">
+                {calendarEvents.length}
+              </p>
+              <p className="text-xs sm:text-sm font-semibold text-muted-foreground uppercase tracking-widest text-center sm:text-left">
+                Total Events
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl border-none bg-gradient-to-br from-blue-500/10 to-transparent shadow-sm">
+            <CardContent className="p-4 sm:p-6 flex flex-col items-center sm:items-start space-y-2">
+              <div className="p-3 bg-blue-500/20 rounded-xl mb-1">
+                <PartyPopper className="h-6 w-6 text-blue-500" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">
+                {
+                  calendarEvents.filter((event) => {
+                    const startDate = new Date();
+                    startDate.setHours(0, 0, 0, 0);
+                    const endDate = new Date();
+                    endDate.setHours(23, 59, 59, 999);
+
+                    const startTime = (event.kind === 30311 || event.kind === 30312 || event.kind === 30313)
+                      ? event.tags.find((tag) => tag[0] === "starts")?.[1]
+                      : event.tags.find((tag) => tag[0] === "start")?.[1];
+
+                    if (!startTime) return false;
+
+                    let timeMs = 0;
+                    if (event.kind === 31922) {
+                      if (startTime.match(/^\d{10}$/)) timeMs = parseInt(startTime) * 1000;
+                      else if (startTime.match(/^\d{13}$/)) timeMs = parseInt(startTime);
+                      else {
+                        const [y, m, d] = startTime.split('-').map(Number);
+                        timeMs = new Date(y, m - 1, d, 0, 0, 0).getTime();
+                      }
+                    } else {
+                      timeMs = parseInt(startTime) * 1000;
+                    }
+
+                    return timeMs >= startDate.getTime() && timeMs <= endDate.getTime();
+                  }).length
+                }
+              </p>
+              <p className="text-xs sm:text-sm font-semibold text-muted-foreground uppercase tracking-widest text-center sm:text-left">
+                Happening Today
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl border-none bg-gradient-to-br from-green-500/10 to-transparent shadow-sm">
+            <CardContent className="p-4 sm:p-6 flex flex-col items-center sm:items-start space-y-2">
+              <div className="p-3 bg-green-500/20 rounded-xl mb-1">
+                <Users className="h-6 w-6 text-green-500" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">
+                {uniquePubkeys.length}
+              </p>
+              <p className="text-xs sm:text-sm font-semibold text-muted-foreground uppercase tracking-widest text-center sm:text-left">
+                Organizers
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl border-none bg-gradient-to-br from-purple-500/10 to-transparent shadow-sm">
+            <CardContent className="p-4 sm:p-6 flex flex-col items-center sm:items-start space-y-2">
+              <div className="p-3 bg-purple-500/20 rounded-xl mb-1">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-purple-500">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
+              </div>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">
+                {isLoadingGlobalRsvps ? (
+                  <span className="animate-pulse">-</span>
+                ) : (
+                  totalRSVPs
+                )}
+              </p>
+              <p className="text-xs sm:text-sm font-semibold text-muted-foreground uppercase tracking-widest text-center sm:text-left">
+                Total RSVPs
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Filters */}
       <Card className="rounded-none sm:rounded-2xl border-2 border-primary/10 bg-gradient-to-r from-primary/5 to-accent/5">
@@ -764,12 +876,11 @@ export function Home() {
               )?.[1];
               const imageUrl = event.tags.find((tag) => tag[0] === "image")?.[1];
               const eventIdentifier = createEventIdentifier(event);
-              
+
               // Extract pricing information
               const price = event.tags.find((tag) => tag[0] === "price")?.[1];
               const lightningAddress = event.tags.find((tag) => tag[0] === "lud16")?.[1];
               const isPaidEvent = price && lightningAddress;
-              
               // Calculate attendee count from pre-computed RSVP map (O(1) lookup)
               const dTag = event.tags.find((tag) => tag[0] === "d")?.[1];
               const eventAddress = dTag
@@ -779,13 +890,12 @@ export function Home() {
                 rsvpCountMap.get(event.id) || 0,
                 eventAddress ? (rsvpCountMap.get(eventAddress) || 0) : 0
               );
-              
               // Check if this is a live event
               const live = isLiveEvent(event);
               const inPerson = isInPersonEvent(event);
               const streamingUrl = getStreamingUrl(event);
               const liveStatus = event.kind === 30311 ? getLiveEventStatus(event as LiveEvent) : null;
-              
+
               // Get platform icon for live events
               const platformIcon = isLiveEventType(event) ? getPlatformIcon(event) : null;
 
@@ -797,7 +907,7 @@ export function Home() {
               const isLastElement = index === filteredEvents.length - 1;
 
               return (
-                <div 
+                <div
                   key={event.id}
                   ref={isLastElement ? lastEventElementRef : undefined}
                 >
@@ -925,7 +1035,7 @@ export function Home() {
                         )}
                       </div>
                     </CardContent>
-                    </Card>
+                  </Card>
                   </Link>
                 </div>
               );
