@@ -3,15 +3,15 @@ import { formatDistanceToNow } from "date-fns";
 import { Heart } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { useAuthor } from "@/hooks/useAuthor";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { cn } from "@/lib/utils";
 import { getAvatarShape } from "@/lib/avatarShapes";
 import { UserActionsMenu } from "@/components/UserActionsMenu";
-import type { NostrEvent } from "@nostrify/nostrify";
+import type { NostrEvent, NostrMetadata } from "@nostrify/nostrify";
 
 interface CommentItemProps {
   comment: NostrEvent;
+  authorMetadata?: NostrMetadata;
   likeCount: number;
   hasUserLiked: boolean;
   onLike: () => void;
@@ -32,17 +32,16 @@ function removeImageUrls(content: string): string {
   return content.replace(regex, '').trim();
 }
 
-export const CommentItem = memo(function CommentItem({ 
-  comment, 
-  likeCount, 
-  hasUserLiked, 
-  onLike 
+export const CommentItem = memo(function CommentItem({
+  comment,
+  authorMetadata,
+  likeCount,
+  hasUserLiked,
+  onLike
 }: CommentItemProps) {
   const { user } = useCurrentUser();
-  const author = useAuthor(comment.pubkey);
-  
-  const authorMetadata = author.data?.metadata;
-  const displayName = authorMetadata?.name || 
+
+  const displayName = authorMetadata?.name ||
                       authorMetadata?.display_name || 
                       comment.pubkey.slice(0, 8);
   const profileImage = authorMetadata?.picture;

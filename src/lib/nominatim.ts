@@ -25,7 +25,6 @@ export async function searchLocations(
   }
 
   try {
-    console.log("Searching for location:", query);
     const response = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
         query
@@ -35,6 +34,7 @@ export async function searchLocations(
           "Accept-Language": "en-US,en;q=0.9",
           "User-Agent": "Plektos/1.0",
         },
+        signal: AbortSignal.timeout(10000),
       }
     );
 
@@ -43,8 +43,10 @@ export async function searchLocations(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const data = await response.json();
-    console.log(`Found ${data.length} results for "${query}"`, data);
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) {
+      throw new Error("Unexpected response shape from Nominatim");
+    }
 
     // Cache the results
     searchCache.set(query, data);

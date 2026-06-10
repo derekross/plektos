@@ -70,9 +70,12 @@ export function SocialFeed() {
   useEffect(() => {
     if (!user) return; // Don't auto-refresh if not logged in
 
-    // Set up periodic refresh every 2 minutes
+    // Set up periodic refresh every 2 minutes; skip when the tab is hidden
+    // so background tabs don't hammer the relays
     const refreshInterval = setInterval(() => {
-      refetch();
+      if (document.visibilityState === "visible") {
+        refetch();
+      }
     }, 2 * 60 * 1000); // 2 minutes
 
     // Cleanup interval on unmount
@@ -308,9 +311,10 @@ function SocialFeedItem({ activity, authorMetadata }: SocialFeedItemProps) {
           <Card className="border-2 border-border/50 group-hover:border-primary/30 transition-all duration-200 overflow-hidden">
             {eventImage && (
               <div className="aspect-video sm:aspect-[2/1] w-full overflow-hidden">
-                <img 
-                  src={eventImage} 
+                <img
+                  src={eventImage}
                   alt={eventTitle}
+                  loading="lazy"
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               </div>

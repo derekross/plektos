@@ -85,38 +85,43 @@ export function generateRecurringEventDates(
   return events;
 }
 
+// All date arithmetic below uses UTC methods. The inputs are date-only
+// strings ("YYYY-MM-DD"), which `new Date()` parses as UTC midnight, and
+// `formatDate` serializes via toISOString (UTC). Mixing in local-time
+// methods (setDate/getDay) would shift dates by a day for users in
+// negative UTC offsets and across DST transitions.
 function getNextOccurrence(currentDate: Date, config: RecurringEventConfig): Date {
   let nextDate = new Date(currentDate);
 
   switch (config.pattern) {
     case 'daily':
-      nextDate.setDate(nextDate.getDate() + config.interval);
+      nextDate.setUTCDate(nextDate.getUTCDate() + config.interval);
       break;
 
     case 'weekly':
       if (config.weeklyDays && config.weeklyDays.length > 0) {
         // Find the next occurrence of any of the selected days
-        const currentDay = nextDate.getDay();
+        const currentDay = nextDate.getUTCDay();
         const nextDays = config.weeklyDays
           .filter(day => day > currentDay)
           .sort((a, b) => a - b);
-        
+
         if (nextDays.length > 0) {
           // Next occurrence is this week
-          nextDate.setDate(nextDate.getDate() + (nextDays[0] - currentDay));
+          nextDate.setUTCDate(nextDate.getUTCDate() + (nextDays[0] - currentDay));
         } else {
           // Next occurrence is next week
           const firstDay = Math.min(...config.weeklyDays);
-          nextDate.setDate(nextDate.getDate() + (7 - currentDay + firstDay));
+          nextDate.setUTCDate(nextDate.getUTCDate() + (7 - currentDay + firstDay));
         }
-        
+
         // Apply interval (every N weeks)
         if (config.interval > 1) {
-          nextDate.setDate(nextDate.getDate() + (config.interval - 1) * 7);
+          nextDate.setUTCDate(nextDate.getUTCDate() + (config.interval - 1) * 7);
         }
       } else {
         // Default to same day of week
-        nextDate.setDate(nextDate.getDate() + (7 * config.interval));
+        nextDate.setUTCDate(nextDate.getUTCDate() + (7 * config.interval));
       }
       break;
 
@@ -129,75 +134,77 @@ function getNextOccurrence(currentDate: Date, config: RecurringEventConfig): Dat
         nextDate = getNextMonthlyDay(nextDate, config.monthlyDay, config.interval);
       } else {
         // Default to same day of month
-        nextDate.setMonth(nextDate.getMonth() + config.interval);
+        nextDate.setUTCMonth(nextDate.getUTCMonth() + config.interval);
       }
       break;
 
     case 'custom':
       // For custom patterns, default to daily interval
-      nextDate.setDate(nextDate.getDate() + config.interval);
+      nextDate.setUTCDate(nextDate.getUTCDate() + config.interval);
       break;
 
     default:
-      nextDate.setDate(nextDate.getDate() + 1);
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
   }
 
   return nextDate;
 }
 
 function getNextMonthlyWeekday(
-  currentDate: Date, 
-  monthlyWeekday: { week: number; day: number }, 
+  currentDate: Date,
+  monthlyWeekday: { week: number; day: number },
   interval: number
 ): Date {
   const nextDate = new Date(currentDate);
-  
+
   // Move to next month
-  nextDate.setMonth(nextDate.getMonth() + interval);
-  nextDate.setDate(1); // Start from first day of month
-  
+  nextDate.setUTCMonth(nextDate.getUTCMonth() + interval);
+  nextDate.setUTCDate(1); // Start from first day of month
+
   const targetWeek = monthlyWeekday.week;
   const targetDay = monthlyWeekday.day;
-  
+
   if (targetWeek === -1) {
     // Last occurrence of the day in the month
-    const lastDay = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0);
-    const lastDayOfWeek = lastDay.getDay();
+    const lastDay = new Date(Date.UTC(nextDate.getUTCFullYear(), nextDate.getUTCMonth() + 1, 0));
+    const lastDayOfWeek = lastDay.getUTCDay();
     const daysToSubtract = (lastDayOfWeek - targetDay + 7) % 7;
-    nextDate.setDate(lastDay.getDate() - daysToSubtract);
+    nextDate.setUTCDate(lastDay.getUTCDate() - daysToSubtract);
   } else {
     // Find the Nth occurrence of the day
     let occurrenceCount = 0;
     const currentDay = new Date(nextDate);
-    
-    while (currentDay.getMonth() === nextDate.getMonth()) {
-      if (currentDay.getDay() === targetDay) {
+
+    while (currentDay.getUTCMonth() === nextDate.getUTCMonth()) {
+      if (currentDay.getUTCDay() === targetDay) {
         occurrenceCount++;
         if (occurrenceCount === targetWeek) {
           nextDate.setTime(currentDay.getTime());
           break;
         }
       }
-      currentDay.setDate(currentDay.getDate() + 1);
+      currentDay.setUTCDate(currentDay.getUTCDate() + 1);
     }
   }
-  
+
   return nextDate;
 }
 
 function getNextMonthlyDay(
-  currentDate: Date, 
-  monthlyDay: number, 
+  currentDate: Date,
+  monthlyDay: number,
   interval: number
 ): Date {
   const nextDate = new Date(currentDate);
-  nextDate.setMonth(nextDate.getMonth() + interval);
-  
+  // Set day first to avoid month-overflow (e.g. Jan 31 + 1 month = Mar 3)
+  nextDate.setUTCDate(1);
+  nextDate.setUTCMonth(nextDate.getUTCMonth() + interval);
+
   // Handle months with fewer days
-  const daysInMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
+  const daysInMonth = new Date(Date.UTC(nextDate.getUTCFullYear(), nextDate.getUTCMonth() + 1, 0)).getUTCDate();
   const targetDay = Math.min(monthlyDay, daysInMonth);
-  
-  nextDate.setDate(targetDay);
+
+  nextDate.setUTCDate(targetDay);
   return nextDate;
 }
 

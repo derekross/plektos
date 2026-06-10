@@ -4,7 +4,10 @@ import { toast } from "sonner";
 import { bech32 } from "bech32";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useNostr } from "@nostrify/react";
-import { isValidHostname } from "@/lib/utils";
+import { isValidHostname, sanitizeHttpsUrl } from "@/lib/utils";
+
+// Timeout for requests to external lightning services
+const LNURL_FETCH_TIMEOUT_MS = 10000;
 
 // Default relay URLs used for zap requests
 const RELAY_URLS = [
@@ -72,12 +75,13 @@ export function useZap() {
         let lnurlResponse;
         try {
           lnurlResponse = await fetch(
-            `https://${domain}/.well-known/lnurlp/${username}`,
+            `https://${domain}/.well-known/lnurlp/${encodeURIComponent(username)}`,
             {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
               },
+              signal: AbortSignal.timeout(LNURL_FETCH_TIMEOUT_MS),
             }
           );
         } catch {
@@ -96,6 +100,15 @@ export function useZap() {
 
         if (!lnurlData.allowsNostr) {
           throw new Error("This lightning address doesn't support Nostr zaps");
+        }
+
+        // The callback comes from a remote server — require a valid HTTPS URL
+        // before sending the signed zap request to it.
+        const callback = sanitizeHttpsUrl(
+          typeof lnurlData.callback === "string" ? lnurlData.callback : undefined
+        );
+        if (!callback) {
+          throw new Error("Lightning service returned an invalid callback URL");
         }
 
         // Validate amount is within bounds from the lightning service
@@ -137,7 +150,7 @@ export function useZap() {
 
         // Create the invoice using the LNURL callback
         const zapRequestJson = JSON.stringify(zapRequest);
-        const callbackUrl = `${lnurlData.callback}?amount=${amountMsats}&nostr=${encodeURIComponent(zapRequestJson)}`;
+        const callbackUrl = `${callback}?amount=${amountMsats}&nostr=${encodeURIComponent(zapRequestJson)}`;
 
         let callbackResponse;
         let zapSuccessful = true;
@@ -149,19 +162,21 @@ export function useZap() {
             headers: {
               'Accept': 'application/json',
             },
+            signal: AbortSignal.timeout(LNURL_FETCH_TIMEOUT_MS),
           });
         } catch {
           zapSuccessful = false;
 
           // Skip to fallback immediately if we get a CORS or network error
-          const fallbackUrl = `${lnurlData.callback}?amount=${amountMsats}`;
-          
+          const fallbackUrl = `${callback}?amount=${amountMsats}`;
+
           try {
             callbackResponse = await fetch(fallbackUrl, {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
               },
+              signal: AbortSignal.timeout(LNURL_FETCH_TIMEOUT_MS),
             });
             
             if (callbackResponse.ok) {
@@ -178,21 +193,21 @@ export function useZap() {
 
         // If the first attempt failed but didn't error, try POST
         if (zapSuccessful && callbackResponse && !callbackResponse.ok) {
-          
-          const postUrl = `${lnurlData.callback}`;
+
           const formData = new URLSearchParams({
             amount: amountMsats.toString(),
             nostr: zapRequestJson
           });
 
           try {
-            callbackResponse = await fetch(postUrl, {
+            callbackResponse = await fetch(callback, {
               method: 'POST',
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/x-www-form-urlencoded',
               },
-              body: formData
+              body: formData,
+              signal: AbortSignal.timeout(LNURL_FETCH_TIMEOUT_MS),
             });
           } catch {
             zapSuccessful = false;
@@ -202,14 +217,15 @@ export function useZap() {
         // Final fallback if everything fails
         if (zapSuccessful && (!callbackResponse || !callbackResponse.ok)) {
           // Try final fallback without the nostr parameter
-          const fallbackUrl = `${lnurlData.callback}?amount=${amountMsats}`;
-          
+          const fallbackUrl = `${callback}?amount=${amountMsats}`;
+
           try {
             const fallbackResponse = await fetch(fallbackUrl, {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
               },
+              signal: AbortSignal.timeout(LNURL_FETCH_TIMEOUT_MS),
             });
 
             if (fallbackResponse.ok) {
@@ -274,8 +290,12 @@ export function useZap() {
           };
         }
 
-        // Send payment
+        // Send payment. Some WebLN providers resolve without a preimage when
+        // the user cancels — only a preimage proves the payment settled.
         const paymentResult = await window.webln.sendPayment(invoiceData.pr);
+        if (!paymentResult?.preimage) {
+          throw new Error("Payment was not completed");
+        }
 
         // Success - show success toast only if caller didn't opt to handle it themselves
         if (!options.skipSuccessToast) {
@@ -331,8 +351,9 @@ export function useZap() {
       const signedZapRequest = await user.signer.signEvent(zapRequest);
       await nostr.event(signedZapRequest);
 
-      toast.success(`Ticket purchased successfully for ${manualPaymentData.amount} sats!`);
-
+      // No success toast here: publishing a zap request is not proof of
+      // payment. Callers confirm payment (via a verified zap receipt)
+      // before telling the user their ticket is purchased.
       return signedZapRequest;
     },
     [user, nostr]

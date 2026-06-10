@@ -40,6 +40,29 @@ export function sanitizeHttpsUrl(url: string | undefined | null): string | undef
 }
 
 /**
+ * Validates a URL for safe interpolation into CSS (e.g. `url("...")` or
+ * `@font-face src`). Requires http(s) and rejects any character that could
+ * break out of the CSS string context (quotes, backslashes, parens,
+ * whitespace, braces, semicolons).
+ */
+export function sanitizeCssUrl(url: string | undefined | null): string | undefined {
+  const safe = sanitizeUrl(url);
+  if (!safe) return undefined;
+  if (/['"\\(){};\s]/.test(safe)) return undefined;
+  return safe;
+}
+
+/**
+ * Validates a font-family name for safe interpolation into CSS.
+ * Allows letters, digits, spaces, hyphens, and underscores only.
+ */
+export function sanitizeFontFamily(family: string | undefined | null): string | undefined {
+  if (!family) return undefined;
+  if (!/^[A-Za-z0-9 _-]{1,64}$/.test(family)) return undefined;
+  return family;
+}
+
+/**
  * Validates that a hostname is a proper domain name (not localhost, not IP).
  * Used for lightning address domain validation.
  */

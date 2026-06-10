@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useNostr } from '@nostrify/react';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -38,6 +38,10 @@ export function useNotificationListener() {
     // Skip if we've already processed this event
     if (processedEventsRef.current.has(event.id)) {
       return;
+    }
+    // Cap the dedup set so it doesn't grow unbounded over a long session
+    if (processedEventsRef.current.size >= 5000) {
+      processedEventsRef.current.clear();
     }
     processedEventsRef.current.add(event.id);
 
@@ -150,33 +154,43 @@ export function useNotificationListener() {
     }
   };
 
+  // Stable primitive key — using the userEvents array object would churn the
+  // query key (and refetch) every time the upstream query re-resolves
+  const userEventIdsKey = useMemo(
+    () => userEvents.map((event) => event.id).sort().join(','),
+    [userEvents]
+  );
+
   // Fetch recent notifications for user events
   useQuery({
-    queryKey: ['recentNotifications', user?.pubkey, userEvents],
+    queryKey: ['recentNotifications', user?.pubkey, userEventIdsKey],
     queryFn: async ({ signal }) => {
       if (!user?.pubkey || !userEvents.length) return [];
-      
+
       const userEventIds = userEvents.map(event => event.id);
       const since = Math.floor(Date.now() / 1000) - (24 * 60 * 60); // Last 24 hours
-      
+
       const filters = [
-        // RSVPs to user's events 
+        // RSVPs to user's events
         {
           kinds: [31925],
           "#e": userEventIds,
           since,
+          limit: 100,
         },
-        // Comments on user's events 
+        // Comments on user's events
         {
           kinds: [1111],
           "#e": userEventIds,
           since,
+          limit: 100,
         },
-        // Zaps to user's events 
+        // Zaps to user's events
         {
           kinds: [9735],
           "#e": userEventIds,
           since,
+          limit: 100,
         },
       ];
 

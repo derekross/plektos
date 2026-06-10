@@ -166,18 +166,30 @@ export async function getCachedFollowList(pubkey: string): Promise<CachedFollowL
   }
 }
 
-// Cache cleanup - remove entries older than specified duration
+// Trim a table to at most `max` rows, deleting those with the oldest created_at
+async function trimByCount(table: Table<CalendarEvent> | Table<EventRSVP>, max: number) {
+  const count = await table.count();
+  if (count <= max) return;
+  const oldestKeys = await table
+    .orderBy("created_at")
+    .limit(count - max)
+    .primaryKeys();
+  await table.bulkDelete(oldestKeys);
+}
+
+// Cache cleanup. Profiles and follow lists expire by cache age. Calendar
+// events and RSVPs must NOT be evicted by created_at (that's the publish
+// time — an event published last month can be scheduled for next month),
+// so they are only capped by count.
 export async function cleanupOldCache(maxAgeMs: number = 24 * 60 * 60 * 1000) {
   try {
     const cutoff = Date.now() - maxAgeMs;
-    const cutoffSeconds = Math.floor(cutoff / 1000);
 
     await Promise.all([
       db.profiles.where("cachedAt").below(cutoff).delete(),
       db.followLists.where("cachedAt").below(cutoff).delete(),
-      // Clean up old events and RSVPs based on created_at (Unix seconds)
-      db.events.where("created_at").below(cutoffSeconds).delete(),
-      db.rsvps.where("created_at").below(cutoffSeconds).delete(),
+      trimByCount(db.events, MAX_CACHED_EVENTS),
+      trimByCount(db.rsvps, MAX_CACHED_RSVPS),
     ]);
   } catch {
     // Silently fail

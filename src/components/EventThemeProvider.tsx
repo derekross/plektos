@@ -4,6 +4,7 @@ import {
   tokenToCssVar,
   type ThemeConfig,
 } from "@/lib/themes";
+import { sanitizeCssUrl, sanitizeFontFamily } from "@/lib/utils";
 
 interface EventThemeProviderProps {
   theme: ThemeConfig;
@@ -69,18 +70,25 @@ export function EventThemeProvider({ theme, children }: EventThemeProviderProps)
     const fontFamilies: { body?: string; title?: string } = {};
 
     for (const font of theme.fonts) {
+      // Theme events come from untrusted relays — reject any family/url that
+      // could break out of the CSS string context.
+      const family = sanitizeFontFamily(font.family);
+      if (!family) continue;
+
       if (font.url) {
+        const url = sanitizeCssUrl(font.url);
+        if (!url) continue;
         fontRules.push(`
           @font-face {
-            font-family: '${font.family}';
-            src: url('${font.url}');
+            font-family: '${family}';
+            src: url('${url}');
             font-display: swap;
           }
         `);
       }
 
-      if (font.role === "body") fontFamilies.body = font.family;
-      if (font.role === "title") fontFamilies.title = font.family;
+      if (font.role === "body") fontFamilies.body = family;
+      if (font.role === "title") fontFamilies.title = family;
     }
 
     if (fontFamilies.body) {
@@ -111,8 +119,13 @@ export function EventThemeProvider({ theme, children }: EventThemeProviderProps)
   }, [theme.fonts]);
 
   // Apply background image
+  const backgroundUrl = theme.background?.url;
+  const backgroundMode = theme.background?.mode;
   useEffect(() => {
-    if (!theme.background?.url) return;
+    // Background URLs come from untrusted relay events — validate before
+    // interpolating into a CSS url() string.
+    const safeUrl = sanitizeCssUrl(backgroundUrl);
+    if (!safeUrl) return;
 
     const prevBg = document.body.style.backgroundImage;
     const prevBgSize = document.body.style.backgroundSize;
@@ -120,9 +133,9 @@ export function EventThemeProvider({ theme, children }: EventThemeProviderProps)
     const prevBgPos = document.body.style.backgroundPosition;
     const prevBgAttach = document.body.style.backgroundAttachment;
 
-    document.body.style.backgroundImage = `url("${theme.background.url}")`;
+    document.body.style.backgroundImage = `url("${safeUrl}")`;
 
-    if (theme.background.mode === "tile") {
+    if (backgroundMode === "tile") {
       document.body.style.backgroundRepeat = "repeat";
       document.body.style.backgroundSize = "auto";
     } else {
@@ -139,7 +152,7 @@ export function EventThemeProvider({ theme, children }: EventThemeProviderProps)
       document.body.style.backgroundPosition = prevBgPos;
       document.body.style.backgroundAttachment = prevBgAttach;
     };
-  }, [theme.background]);
+  }, [backgroundUrl, backgroundMode]);
 
   return <>{children}</>;
 }

@@ -452,59 +452,6 @@ export function getEventTimezone(
 }
 
 /**
- * Converts a timestamp from one timezone to another
- */
-export function convertTimezone(
-  timestamp: number,
-  fromTimezone: string | null,
-  toTimezone: string | null
-): number {
-  if (!fromTimezone || !toTimezone || fromTimezone === toTimezone) {
-    return timestamp;
-  }
-
-  try {
-    const date = new Date(timestamp);
-
-    // Get the offset in minutes for both timezones
-    const fromOffset = getTimezoneOffset(date, fromTimezone);
-    const toOffset = getTimezoneOffset(date, toTimezone);
-
-    // Calculate the difference in milliseconds
-    const offsetDiff = (toOffset - fromOffset) * 60 * 1000;
-
-    return timestamp + offsetDiff;
-  } catch {
-    return timestamp;
-  }
-}
-
-/**
- * Gets the timezone offset in minutes for a given date and timezone
- */
-function getTimezoneOffset(date: Date, timezone: string): number {
-  try {
-    // Create a date string in the target timezone
-    const dateInTimezone = date.toLocaleString("en-US", { timeZone: timezone });
-
-    // Create a new date object from the timezone-specific string
-    const timezoneDate = new Date(dateInTimezone);
-
-    // Get the UTC time of the original date
-    const utcTime = date.getTime();
-
-    // Get the UTC time of the timezone-specific date
-    const timezoneUtcTime = timezoneDate.getTime();
-
-    // Calculate the offset in minutes
-    const offsetMs = utcTime - timezoneUtcTime;
-    return Math.round(offsetMs / (60 * 1000));
-  } catch {
-    return 0;
-  }
-}
-
-/**
  * Formats a date in the event's local timezone if detectable, otherwise uses browser timezone
  */
 export function formatEventDateTime(

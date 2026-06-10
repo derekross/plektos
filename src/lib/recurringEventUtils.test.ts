@@ -60,14 +60,14 @@ describe('RecurringEventUtils', () => {
       };
 
       const result = generateRecurringEventDates(
-        '2024-01-02', // This is a Monday
-        '2024-01-03',
+        '2024-01-01', // This is a Monday
+        '2024-01-02',
         config
       );
 
       expect(result).toHaveLength(2);
-      expect(result[0].startDate).toBe('2024-01-02');
-      expect(result[1].startDate).toBe('2024-01-09'); // Next Monday (7 days later)
+      expect(result[0].startDate).toBe('2024-01-01');
+      expect(result[1].startDate).toBe('2024-01-08'); // Next Monday (7 days later)
     });
 
     it('should handle invalid dates gracefully', () => {

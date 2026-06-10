@@ -1,6 +1,7 @@
 import { memo } from "react";
+import type { NostrMetadata } from "@nostrify/nostrify";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useAuthor } from "@/hooks/useAuthor";
+import { useAuthorsMetadata } from "@/hooks/useAuthorsMetadata";
 import { genUserName } from "@/lib/genUserName";
 import { getAvatarShape } from "@/lib/avatarShapes";
 import {
@@ -20,12 +21,14 @@ interface RSVPAvatarsProps {
 export function RSVPAvatars({ pubkeys, maxVisible = 3 }: RSVPAvatarsProps) {
   const visiblePubkeys = pubkeys.slice(0, maxVisible);
   const remainingCount = Math.max(0, pubkeys.length - maxVisible);
+  // Single batched metadata query instead of one query per avatar
+  const { data: metadataMap = {} } = useAuthorsMetadata(visiblePubkeys);
 
   return (
     <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
       <div className="flex -space-x-1 sm:-space-x-2">
         {visiblePubkeys.map((pubkey) => (
-          <RSVPAvatar key={pubkey} pubkey={pubkey} />
+          <RSVPAvatar key={pubkey} pubkey={pubkey} metadata={metadataMap[pubkey]} />
         ))}
       </div>
       {remainingCount > 0 && (
@@ -37,11 +40,16 @@ export function RSVPAvatars({ pubkeys, maxVisible = 3 }: RSVPAvatarsProps) {
   );
 }
 
-const RSVPAvatar = memo(function RSVPAvatar({ pubkey }: { pubkey: string }) {
-  const { data: author } = useAuthor(pubkey);
-  const displayName = author?.metadata?.name ?? genUserName(pubkey);
-  const avatarUrl = author?.metadata?.picture;
-  const shape = getAvatarShape(author?.metadata);
+const RSVPAvatar = memo(function RSVPAvatar({
+  pubkey,
+  metadata,
+}: {
+  pubkey: string;
+  metadata?: NostrMetadata;
+}) {
+  const displayName = metadata?.name ?? genUserName(pubkey);
+  const avatarUrl = metadata?.picture;
+  const shape = getAvatarShape(metadata);
   const npub = nip19.npubEncode(pubkey);
 
   return (

@@ -14,6 +14,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useAuthor } from "@/hooks/useAuthor";
 import { openUrl } from "@/lib/utils";
 import QrScanner from "qr-scanner";
+import type { NostrEvent } from "@nostrify/nostrify";
 
 interface TicketData {
   eventId: string;
@@ -22,6 +23,87 @@ interface TicketData {
   buyerPubkey: string;
   eventTitle: string;
   purchaseTime: number;
+}
+
+/** Data extracted from the on-network zap receipt after validation. */
+interface VerifiedTicket {
+  receipt: NostrEvent;
+  buyerPubkey: string;
+  amountSats: number;
+  paidAt: number;
+}
+
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/**
+ * Strictly validates an untrusted ticket payload (from URL param, pasted
+ * text, or scanned QR code). Returns null if any field is malformed.
+ */
+function parseTicketData(raw: unknown): TicketData | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const d = raw as Record<string, unknown>;
+  if (typeof d.eventId !== "string" || !HEX64.test(d.eventId)) return null;
+  if (typeof d.receiptId !== "string" || !HEX64.test(d.receiptId)) return null;
+  if (typeof d.buyerPubkey !== "string" || !HEX64.test(d.buyerPubkey)) return null;
+  if (typeof d.amount !== "number" || !Number.isFinite(d.amount) || d.amount < 0) return null;
+  if (typeof d.eventTitle !== "string") return null;
+  if (typeof d.purchaseTime !== "number" || !Number.isFinite(d.purchaseTime)) return null;
+  return {
+    eventId: d.eventId,
+    receiptId: d.receiptId,
+    buyerPubkey: d.buyerPubkey,
+    amount: d.amount,
+    eventTitle: d.eventTitle,
+    purchaseTime: d.purchaseTime,
+  };
+}
+
+/**
+ * Validates a fetched zap receipt against the claimed ticket data.
+ * Zap receipt ids are public, so a ticket is only valid if the receipt
+ * actually references the claimed event, was paid to the event's host,
+ * and the embedded zap request matches the claimed buyer and amount.
+ */
+function validateReceipt(
+  receipt: NostrEvent,
+  calendarEvent: NostrEvent | undefined,
+  ticketData: TicketData
+): VerifiedTicket | null {
+  const referencedEventId = receipt.tags.find((tag) => tag[0] === "e")?.[1];
+  if (referencedEventId !== ticketData.eventId) return null;
+
+  // The zap recipient must be the host (author) of the calendar event
+  if (!calendarEvent) return null;
+  const recipient = receipt.tags.find((tag) => tag[0] === "p")?.[1];
+  if (recipient !== calendarEvent.pubkey) return null;
+
+  const description = receipt.tags.find((tag) => tag[0] === "description")?.[1];
+  if (!description) return null;
+
+  let zapRequest: { pubkey?: unknown; tags?: unknown };
+  try {
+    zapRequest = JSON.parse(description);
+  } catch {
+    return null;
+  }
+
+  const buyerPubkey = zapRequest.pubkey;
+  if (typeof buyerPubkey !== "string" || buyerPubkey !== ticketData.buyerPubkey) {
+    return null;
+  }
+
+  const zapTags = Array.isArray(zapRequest.tags) ? (zapRequest.tags as string[][]) : [];
+  const amountMsats = parseInt(zapTags.find((tag) => tag[0] === "amount")?.[1] ?? "");
+  if (!Number.isFinite(amountMsats)) return null;
+  const amountSats = Math.floor(amountMsats / 1000);
+  if (amountSats !== ticketData.amount) return null;
+
+  return {
+    receipt,
+    buyerPubkey,
+    amountSats,
+    paidAt: receipt.created_at,
+  };
 }
 
 interface AttendeeItemProps {
@@ -183,8 +265,12 @@ export function VerifyTicket() {
     const dataParam = searchParams.get('data');
     if (dataParam) {
       try {
-        const decoded = JSON.parse(decodeURIComponent(dataParam));
-        setTicketData(decoded);
+        const decoded = parseTicketData(JSON.parse(decodeURIComponent(dataParam)));
+        if (decoded) {
+          setTicketData(decoded);
+        } else {
+          setVerificationStatus('error');
+        }
       } catch (error) {
         console.error('Error parsing ticket data:', error);
         setVerificationStatus('error');
@@ -337,15 +423,21 @@ export function VerifyTicket() {
     
     try {
       // Try to parse as JSON first (full ticket data)
-      const decoded = JSON.parse(manualInput);
-      setTicketData(decoded);
+      const decoded = parseTicketData(JSON.parse(manualInput));
+      if (decoded) {
+        setTicketData(decoded);
+      } else {
+        setVerificationStatus('error');
+      }
     } catch {
       // If not JSON, try to parse as URL with data parameter
       try {
         const url = new URL(manualInput);
         const dataParam = url.searchParams.get('data');
-        if (dataParam) {
-          const decoded = JSON.parse(decodeURIComponent(dataParam));
+        const decoded = dataParam
+          ? parseTicketData(JSON.parse(decodeURIComponent(dataParam)))
+          : null;
+        if (decoded) {
           setTicketData(decoded);
         } else {
           setVerificationStatus('error');
@@ -377,16 +469,22 @@ export function VerifyTicket() {
         (result) => {
           // QR code detected
           try {
-            const decoded = JSON.parse(result.data);
-            setTicketData(decoded);
-            stopScanner();
+            const decoded = parseTicketData(JSON.parse(result.data));
+            if (decoded) {
+              setTicketData(decoded);
+              stopScanner();
+            } else {
+              setScannerError('Invalid QR code format. Please try again.');
+            }
           } catch {
             // Try to parse as URL with data parameter
             try {
               const url = new URL(result.data);
               const dataParam = url.searchParams.get('data');
-              if (dataParam) {
-                const decoded = JSON.parse(decodeURIComponent(dataParam));
+              const decoded = dataParam
+                ? parseTicketData(JSON.parse(decodeURIComponent(dataParam)))
+                : null;
+              if (decoded) {
                 setTicketData(decoded);
                 stopScanner();
               } else {
@@ -520,90 +618,44 @@ export function VerifyTicket() {
     };
   }, []);
 
-  // Verify the ticket by checking the zap receipt
+  // Verify the ticket by fetching the zap receipt AND the calendar event,
+  // then validating the receipt's tags against the claimed ticket data.
+  // Receipt ids are public, so existence alone proves nothing.
   const { data: zapReceipt, isLoading, error } = useQuery({
     queryKey: ["verifyTicket", ticketData?.receiptId],
-    queryFn: async () => {
+    queryFn: async (): Promise<VerifiedTicket | null> => {
       if (!ticketData?.receiptId) return null;
 
-      console.log('🔍 Verifying ticket with receipt ID:', ticketData.receiptId);
-      console.log('🔍 Ticket data:', {
-        eventId: ticketData.eventId,
-        receiptId: ticketData.receiptId,
-        amount: ticketData.amount,
-        buyerPubkey: ticketData.buyerPubkey,
-        eventTitle: ticketData.eventTitle
-      });
-      
       // Retry mechanism for relay propagation delay
       const maxRetries = 3;
       const retryDelay = 2000; // 2 seconds
-      
+
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        console.log(`🔄 Verification attempt ${attempt}/${maxRetries}`);
-        
         try {
-          // First try to find by receipt ID only (should be unique)
-          let events = await nostr.query([
-            {
-              kinds: [9735], // Zap receipt
-              ids: [ticketData.receiptId],
-            },
-          ], { signal: AbortSignal.timeout(10000) }); // 10 second timeout
-          
-          console.log(`📋 Found events by ID only (attempt ${attempt}):`, events.length);
-          
-          // If not found, try with event ID filter as well
-          if (events.length === 0) {
-            console.log('🔍 Trying with event ID filter...');
-            try {
-              events = await nostr.query([
-                {
-                  kinds: [9735], // Zap receipt
-                  ids: [ticketData.receiptId],
-                  "#e": [ticketData.eventId],
-                },
-              ], { signal: AbortSignal.timeout(10000) }); // 10 second timeout
-              console.log(`📋 Found events with event ID filter (attempt ${attempt}):`, events.length);
-            } catch (error) {
-              console.log('❌ Error with event ID filter, trying without event ID:', error);
-              // If event ID is malformed, try without it
-              events = await nostr.query([
-                {
-                  kinds: [9735], // Zap receipt
-                  ids: [ticketData.receiptId],
-                },
-              ], { signal: AbortSignal.timeout(10000) }); // 10 second timeout
-              console.log(`📋 Found events without event ID filter (attempt ${attempt}):`, events.length);
-            }
-          }
-          
-          const result = events[0] || null;
-          if (result) {
-            console.log('✅ Found zap receipt:', result.id);
-            return result;
-          } else {
-            console.log(`❌ No zap receipt found for ID (attempt ${attempt}):`, ticketData.receiptId);
-            
-            // If this is not the last attempt, wait before retrying
-            if (attempt < maxRetries) {
-              console.log(`⏳ Waiting ${retryDelay}ms before retry...`);
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
-            }
+          const events = await nostr.query([
+            { kinds: [9735], ids: [ticketData.receiptId] },
+            { kinds: [31922, 31923], ids: [ticketData.eventId] },
+          ], { signal: AbortSignal.timeout(10000) });
+
+          const receipt = events.find(
+            (e) => e.id === ticketData.receiptId && e.kind === 9735
+          );
+          const calendarEvent = events.find((e) => e.id === ticketData.eventId);
+
+          if (receipt) {
+            // Receipt found: validate it against the claim. An invalid
+            // match won't change on retry, so return immediately.
+            return validateReceipt(receipt, calendarEvent, ticketData);
           }
         } catch (error) {
-          console.error(`❌ Error in verification attempt ${attempt}:`, error);
-          if (error.name === 'TimeoutError' || error.message?.includes('timeout')) {
-            console.log(`⏰ Query timed out on attempt ${attempt}`);
-          }
-          if (attempt < maxRetries) {
-            console.log(`⏳ Waiting ${retryDelay}ms before retry...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-          }
+          console.error(`Ticket verification attempt ${attempt} failed:`, error);
+        }
+
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
         }
       }
-      
-      console.log('❌ All verification attempts failed');
+
       return null;
     },
     enabled: !!ticketData?.receiptId,
@@ -624,20 +676,10 @@ export function VerifyTicket() {
       if (isLoading) {
         setVerificationStatus('loading');
       } else if (error) {
-        console.log('❌ Verification error:', error);
         setVerificationStatus('error');
       } else if (zapReceipt) {
-        console.log('✅ Ticket verified successfully');
-        console.log('🎫 Ticket data:', {
-          eventId: ticketData.eventId,
-          buyerPubkey: ticketData.buyerPubkey,
-          receiptId: ticketData.receiptId,
-          eventTitle: ticketData.eventTitle
-        });
         setVerificationStatus('valid');
       } else {
-        console.log('❌ Ticket verification failed - no zap receipt found');
-        console.log('🔍 Looking for receipt ID:', ticketData.receiptId);
         setVerificationStatus('invalid');
       }
     }
@@ -946,17 +988,17 @@ export function VerifyTicket() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Buyer:</span>
-                <span className="font-mono text-xs text-right">{ticketData.buyerPubkey.slice(0, 8)}...</span>
+                <span className="font-mono text-xs text-right">{(zapReceipt?.buyerPubkey ?? ticketData.buyerPubkey).slice(0, 8)}...</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Amount:</span>
                 <Badge variant="secondary" className="text-xs">
-                  {ticketData.amount} sats
+                  {zapReceipt?.amountSats ?? ticketData.amount} sats
                 </Badge>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Purchased:</span>
-                <span className="text-right">{new Date(ticketData.purchaseTime * 1000).toLocaleString()}</span>
+                <span className="text-right">{new Date((zapReceipt?.paidAt ?? ticketData.purchaseTime) * 1000).toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Event ID:</span>

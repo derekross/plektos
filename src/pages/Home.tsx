@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Link } from "react-router-dom";
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, lazy, Suspense } from "react";
 import { createEventIdentifier } from "@/lib/nip19Utils";
 import type { DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting, InteractiveRoom, EventRSVP } from "@/lib/eventTypes";
 import { isLiveEvent, isInPersonEvent, getStreamingUrl, getLiveEventStatus } from "@/lib/liveEventUtils";
@@ -40,7 +40,11 @@ import { MonthlyCalendarView } from "@/components/MonthlyCalendarView";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { getPlatformIcon, isLiveEventType } from "@/lib/platformIcons";
-import { MapView } from "@/components/MapView";
+// Lazy-loaded: keeps Leaflet (a large dependency) out of the initial bundle —
+// it only loads when the user switches to map view
+const MapView = lazy(() =>
+  import("@/components/MapView").then((m) => ({ default: m.MapView }))
+);
 import { LocationSearch } from "@/components/LocationSearch";
 import { sortEventsByDistance, formatDistance, type Coordinates } from "@/lib/geolocation";
 import { formatAmount } from "@/lib/lightning";
@@ -746,7 +750,15 @@ export function Home() {
           </div>
         </div>
       ) : viewMode === "map" ? (
-        <MapView events={filteredEvents || []} className="mb-6" />
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center h-[400px] mb-6">
+              <Spinner />
+            </div>
+          }
+        >
+          <MapView events={filteredEvents || []} className="mb-6" />
+        </Suspense>
       ) : viewMode === "calendar" ? (
         <MonthlyCalendarView events={filteredEvents || []} />
       ) : (

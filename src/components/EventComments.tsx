@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useEventComments } from "@/hooks/useEventComments";
+import { useAuthorsMetadata } from "@/hooks/useAuthorsMetadata";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { CommentItem } from "@/components/CommentItem";
 import { toast } from "sonner";
@@ -40,6 +41,13 @@ export function EventComments({
     getLikeCount,
     hasUserLiked,
   } = useEventComments(eventId, eventKind, eventPubkey, eventIdentifier);
+
+  // Single batched metadata query for all comment authors
+  const commentPubkeys = useMemo(
+    () => [...new Set(comments.map((c) => c.pubkey))],
+    [comments]
+  );
+  const { data: authorsMetadata = {} } = useAuthorsMetadata(commentPubkeys);
 
   const handleImageUpload = async (file: File) => {
     try {
@@ -218,6 +226,7 @@ export function EventComments({
             <CommentItem
               key={comment.id}
               comment={comment}
+              authorMetadata={authorsMetadata[comment.pubkey]}
               likeCount={getLikeCount(comment.id)}
               hasUserLiked={hasUserLiked(comment.id)}
               onLike={() => handleLikeComment(comment.id)}

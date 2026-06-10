@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import { Link } from "react-router-dom";
 import L from "leaflet";
@@ -38,8 +38,8 @@ interface EventMarker {
 // Component to fit map bounds to markers
 function FitBounds({ markers }: { markers: EventMarker[] }) {
   const map = useMap();
-  
-  useMemo(() => {
+
+  useEffect(() => {
     if (markers.length > 0) {
       const bounds = L.latLngBounds(
         markers.map(m => [m.coordinates.lat, m.coordinates.lng])
@@ -47,7 +47,7 @@ function FitBounds({ markers }: { markers: EventMarker[] }) {
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 13 });
     }
   }, [markers, map]);
-  
+
   return null;
 }
 

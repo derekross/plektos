@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useSingleEvent } from "@/lib/eventUtils";
 import { useEventRSVPs } from "@/hooks/useEventRSVPs";
@@ -183,8 +183,10 @@ export function EventDetail() {
   // Determine overall loading state
   const isLoading = isLoadingSingleEvent;
 
-  // Get most recent RSVP for each user using a Map for O(n) dedup
-  const latestRSVPs = (() => {
+  // Get most recent RSVP for each user using a Map for O(n) dedup.
+  // Memoized (with stable derived pubkey arrays) so RSVPAvatars children
+  // don't re-render or re-query on unrelated state changes.
+  const latestRSVPs = useMemo(() => {
     const byPubkey = new Map<string, EventRSVP>();
     for (const rsvp of rsvpEvents) {
       const existing = byPubkey.get(rsvp.pubkey);
@@ -193,22 +195,24 @@ export function EventDetail() {
       }
     }
     return Array.from(byPubkey.values());
-  })();
+  }, [rsvpEvents]);
 
   // Group RSVPs by status
-  const acceptedRSVPs = latestRSVPs.filter(
-    (e) => e.tags.find((tag) => tag[0] === "status")?.[1] === "accepted"
-  );
+  const { acceptedRSVPs, tentativeRSVPs, declinedRSVPs } = useMemo(() => {
+    const statusOf = (e: EventRSVP) =>
+      e.tags.find((tag) => tag[0] === "status")?.[1];
+    return {
+      acceptedRSVPs: latestRSVPs.filter((e) => statusOf(e) === "accepted"),
+      tentativeRSVPs: latestRSVPs.filter((e) => statusOf(e) === "tentative"),
+      declinedRSVPs: latestRSVPs.filter((e) => statusOf(e) === "declined"),
+    };
+  }, [latestRSVPs]);
 
-  const tentativeRSVPs = latestRSVPs.filter(
-    (e) => e.tags.find((tag) => tag[0] === "status")?.[1] === "tentative"
-  );
+  const acceptedPubkeys = useMemo(() => acceptedRSVPs.map((e) => e.pubkey), [acceptedRSVPs]);
+  const tentativePubkeys = useMemo(() => tentativeRSVPs.map((e) => e.pubkey), [tentativeRSVPs]);
+  const declinedPubkeys = useMemo(() => declinedRSVPs.map((e) => e.pubkey), [declinedRSVPs]);
 
-  const declinedRSVPs = latestRSVPs.filter(
-    (e) => e.tags.find((tag) => tag[0] === "status")?.[1] === "declined"
-  );
-
-  const participants = latestRSVPs.map((e) => e.pubkey);
+  const participants = useMemo(() => latestRSVPs.map((e) => e.pubkey), [latestRSVPs]);
 
   const userRSVP = latestRSVPs.find((e) => e.pubkey === user?.pubkey);
   const currentStatus = userRSVP?.tags.find(
@@ -518,7 +522,7 @@ export function EventDetail() {
                       {acceptedRSVPs.length === 1 ? "person" : "people"}
                     </span>
                   </div>
-                  <RSVPAvatars pubkeys={acceptedRSVPs.map((e) => e.pubkey)} />
+                  <RSVPAvatars pubkeys={acceptedPubkeys} />
                 </div>
               )}
               {tentativeRSVPs.length > 0 && (
@@ -535,7 +539,7 @@ export function EventDetail() {
                       {tentativeRSVPs.length === 1 ? "person" : "people"}
                     </span>
                   </div>
-                  <RSVPAvatars pubkeys={tentativeRSVPs.map((e) => e.pubkey)} />
+                  <RSVPAvatars pubkeys={tentativePubkeys} />
                 </div>
               )}
               {declinedRSVPs.length > 0 && (
@@ -552,7 +556,7 @@ export function EventDetail() {
                       {declinedRSVPs.length === 1 ? "person" : "people"}
                     </span>
                   </div>
-                  <RSVPAvatars pubkeys={declinedRSVPs.map((e) => e.pubkey)} />
+                  <RSVPAvatars pubkeys={declinedPubkeys} />
                 </div>
               )}
             </div>

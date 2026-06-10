@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useAuthor } from "@/hooks/useAuthor";
+import { useMemo, useState } from "react";
+import type { NostrMetadata } from "@nostrify/nostrify";
+import { useAuthorsMetadata } from "@/hooks/useAuthorsMetadata";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,9 +26,13 @@ interface ParticipantDisplayProps {
   className?: string;
 }
 
-function ParticipantCard({ participant }: { participant: EventParticipant }) {
-  const { data: authorData } = useAuthor(participant.pubkey);
-  const metadata = authorData?.metadata;
+function ParticipantCard({
+  participant,
+  metadata,
+}: {
+  participant: EventParticipant;
+  metadata?: NostrMetadata;
+}) {
   const displayName = metadata?.name || metadata?.display_name || genUserName(participant.pubkey);
   const shape = getAvatarShape(metadata);
   const npub = nip19.npubEncode(participant.pubkey);
@@ -66,6 +71,12 @@ function ParticipantCard({ participant }: { participant: EventParticipant }) {
 
 export function ParticipantDisplay({ participants, className }: ParticipantDisplayProps) {
   const [isOpen, setIsOpen] = useState(false);
+  // Single batched metadata query instead of one query per participant
+  const participantPubkeys = useMemo(
+    () => participants.map((p) => p.pubkey),
+    [participants]
+  );
+  const { data: metadataMap = {} } = useAuthorsMetadata(participantPubkeys);
 
   if (participants.length === 0) {
     return null;
@@ -124,7 +135,11 @@ export function ParticipantDisplay({ participants, className }: ParticipantDispl
                 </div>
                 <div className="space-y-2">
                   {participantsByRole[role].map(participant => (
-                    <ParticipantCard key={participant.pubkey} participant={participant} />
+                    <ParticipantCard
+                      key={participant.pubkey}
+                      participant={participant}
+                      metadata={metadataMap[participant.pubkey]}
+                    />
                   ))}
                 </div>
               </div>

@@ -8,29 +8,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNotifications } from "@/contexts/NotificationContext";
-import { useAuthor } from "@/hooks/useAuthor";
+import { useAuthorsMetadata } from "@/hooks/useAuthorsMetadata";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { getAvatarShape } from "@/lib/avatarShapes";
 import { formatDistance } from "date-fns";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { NostrMetadata } from "@nostrify/nostrify";
 import type { Notification } from "@/lib/notificationTypes";
 
 interface NotificationItemProps {
   notification: Notification;
+  metadata?: NostrMetadata;
   onMarkAsRead: (id: string) => void;
   onClose: () => void;
 }
 
 function NotificationItem({
   notification,
+  metadata,
   onMarkAsRead,
   onClose,
 }: NotificationItemProps) {
   const navigate = useNavigate();
-  const author = useAuthor(notification.fromPubkey);
-  const metadata = author.data?.metadata;
   const authorName =
     metadata?.display_name ||
     metadata?.name ||
@@ -39,18 +40,10 @@ function NotificationItem({
   const shape = getAvatarShape(metadata);
 
   const handleClick = () => {
-    console.log(
-      "Notification clicked:",
-      notification.id,
-      "read state:",
-      notification.read
-    );
-
     // Always mark as read when clicked
     onMarkAsRead(notification.id);
 
     // Navigate to the event page
-    console.log("Navigating to event:", notification.eventId);
     navigate(`/event/${notification.eventId}`);
 
     // Close the dropdown
@@ -148,6 +141,13 @@ export function NotificationBell({ className }: { className?: string }) {
     useNotifications();
   const [open, setOpen] = useState(false);
 
+  // Single batched metadata query for all notification authors
+  const fromPubkeys = useMemo(
+    () => [...new Set(notifications.map((n) => n.fromPubkey))],
+    [notifications]
+  );
+  const { data: authorsMetadata = {} } = useAuthorsMetadata(fromPubkeys);
+
   const handleMarkAllAsRead = () => {
     markAllAsRead();
   };
@@ -221,6 +221,7 @@ export function NotificationBell({ className }: { className?: string }) {
                 <NotificationItem
                   key={notification.id}
                   notification={notification}
+                  metadata={authorsMetadata[notification.fromPubkey]}
                   onMarkAsRead={markAsRead}
                   onClose={handleClose}
                 />

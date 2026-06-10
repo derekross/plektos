@@ -76,13 +76,8 @@ export function useDirectMessage() {
         id: getEventHash(giftWrapEvent),
       };
 
-      // Convert ephemeral key to hex and sign the gift wrap
-      const ephemeralSkHex = Array.from(ephemeralSk)
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const signedGiftWrap = finalizeEvent(giftWrapWithId, ephemeralSkHex as any);
+      // Sign the gift wrap with the ephemeral key
+      const signedGiftWrap = finalizeEvent(giftWrapWithId, ephemeralSk);
 
       // Step 4: Publish the gift wrapped event
       await nostr.event(signedGiftWrap, { signal: AbortSignal.timeout(5000) });

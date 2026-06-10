@@ -5,6 +5,7 @@ import { useAuthor } from "@/hooks/useAuthor";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useProfileTheme } from "@/hooks/useProfileTheme";
 import { getAvatarShape } from "@/lib/avatarShapes";
+import { sanitizeUrl } from "@/lib/utils";
 import { createEventIdentifier } from "@/lib/nip19Utils";
 import { nip19 } from "nostr-tools";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -268,23 +269,29 @@ export function Profile() {
             </div>
           ) : null}
 
-          {/* Website section - show immediately when available */}
-          {!author.isLoading && website && (
-            <div>
-              <h3 className="font-semibold mb-2">Website</h3>
-              <a
-                href={
-                  website.startsWith("http") ? website : `https://${website}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline flex items-center gap-1"
-              >
-                {website}
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-          )}
+          {/* Website section - show immediately when available.
+              The URL comes from untrusted profile metadata, so validate
+              the scheme before rendering a link. */}
+          {!author.isLoading && website && (() => {
+            const safeWebsite = sanitizeUrl(
+              website.startsWith("http") ? website : `https://${website}`
+            );
+            if (!safeWebsite) return null;
+            return (
+              <div>
+                <h3 className="font-semibold mb-2">Website</h3>
+                <a
+                  href={safeWebsite}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline flex items-center gap-1"
+                >
+                  {website}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -323,6 +330,7 @@ export function Profile() {
                         <img
                           src={imageUrl || "/default-calendar.png"}
                           alt={title}
+                          loading="lazy"
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
@@ -392,6 +400,7 @@ export function Profile() {
                         <img
                           src={imageUrl || "/default-calendar.png"}
                           alt={title}
+                          loading="lazy"
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
