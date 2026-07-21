@@ -1,26 +1,18 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type CSSProperties } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useSingleEvent } from "@/lib/eventUtils";
 import { useEventRSVPs } from "@/hooks/useEventRSVPs";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useAuthor } from "@/hooks/useAuthor";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatAmount } from "@/lib/lightning";
 import { ReminderPanel } from "@/components/ReminderPanel";
 import { toast } from "sonner";
 import { useNostrPublish } from "@/hooks/useNostrPublish";
 import { Textarea } from "@/components/ui/textarea";
 import { LocationDisplay } from "@/components/LocationDisplay";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Share2, Calendar, Users } from "lucide-react";
+import { Share2, MapPin, MessageSquarePlus, X } from "lucide-react";
 import { RSVPAvatars } from "@/components/RSVPAvatars";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type {
@@ -48,62 +40,167 @@ import { cn, sanitizeUrl } from "@/lib/utils";
 import { getAvatarShape } from "@/lib/avatarShapes";
 import { useEventTheme } from "@/hooks/useEventTheme";
 import { EventThemeProvider } from "@/components/EventThemeProvider";
+import { getEventTimezone } from "@/lib/eventTimezone";
 import { isLiveEvent, getViewingUrl, getLiveEventStatus } from "@/lib/liveEventUtils";
 import { getPlatformIcon, isLiveEventType } from "@/lib/platformIcons";
 import { ParticipantDisplay } from "@/components/ParticipantDisplay";
+import { EffectsLayer } from "@/components/EffectsLayer";
+import { parseEffectFromTags } from "@/lib/effects";
 
-function getStatusColor(status: string) {
-  switch (status) {
-    case "accepted":
-      return "bg-green-500/10 text-green-500 hover:bg-green-500/20";
-    case "tentative":
-      return "bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20";
-    case "declined":
-      return "bg-red-500/10 text-red-500 hover:bg-red-500/20";
-    default:
-      return "bg-gray-500/10 text-gray-500 hover:bg-gray-500/20";
+type CalendarEvent = DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting;
+
+type RSVPStatus = "accepted" | "tentative" | "declined";
+
+const RSVP_PILLS: Array<{ status: RSVPStatus; label: string; emoji: string }> = [
+  { status: "accepted", label: "Going", emoji: "✨" },
+  { status: "tentative", label: "Maybe", emoji: "🤔" },
+  { status: "declined", label: "Can't", emoji: "😢" },
+];
+
+const RSVP_TOASTS: Record<RSVPStatus, string> = {
+  accepted: "You're in! 🎉",
+  tentative: "Marked as maybe 🤔",
+  declined: "Can't make it — noted 😢",
+};
+
+/** Resolve the event's start as a Date, across calendar and live kinds. */
+function getEventStartDate(event: CalendarEvent): Date | null {
+  const isLiveKind = event.kind === 30311 || event.kind === 30313;
+  const raw = event.tags.find(
+    (t) => t[0] === (isLiveKind ? "starts" : "start"),
+  )?.[1];
+  if (!raw) return null;
+
+  if (/^\d{10}$/.test(raw)) return new Date(parseInt(raw) * 1000);
+  if (/^\d{13}$/.test(raw)) return new Date(parseInt(raw));
+
+  if (event.kind === 31922) {
+    // YYYY-MM-DD — construct in local time so the day never shifts
+    const [y, m, d] = raw.split("-").map(Number);
+    if (!y || !m || !d) return null;
+    const date = new Date(y, m - 1, d);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  const n = parseInt(raw);
+  if (isNaN(n)) return null;
+  return new Date(n < 10000000000 ? n * 1000 : n);
+}
+
+/** "SAT · AUG 2 · 8 PM" — the poster's date eyebrow. */
+function formatPosterEyebrow(event: CalendarEvent): string | null {
+  const date = getEventStartDate(event);
+  if (!date) return null;
+
+  const isDateBased = event.kind === 31922;
+  // Date-based events are constructed in local time; forcing a timezone
+  // on those could shift the calendar day.
+  const timeZone = isDateBased ? undefined : getEventTimezone(event) ?? undefined;
+
+  try {
+    const day = date.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone,
+    });
+    const time = isDateBased
+      ? null
+      : date.toLocaleTimeString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+          timeZone,
+        });
+    return [day.replace(",", " ·"), time].filter(Boolean).join(" · ");
+  } catch {
+    // Unknown timezone identifier — fall back to browser time
+    return date.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
   }
 }
 
-function getStatusLabel(status: string) {
-  switch (status) {
-    case "accepted":
-      return "Going";
-    case "tentative":
-      return "Maybe";
-    case "declined":
-      return "Can't Go";
-    default:
-      return status;
-  }
-}
-
-function EventAuthor({ pubkey }: { pubkey: string }) {
+/** "Woven by @host" chip on the poster. */
+function HostChip({ pubkey }: { pubkey: string }) {
   const author = useAuthor(pubkey);
   const metadata = author.data?.metadata;
   const displayName =
     metadata?.name || metadata?.display_name || pubkey.slice(0, 8);
   const profileImage = metadata?.picture;
   const shape = getAvatarShape(metadata);
-
-  // Create npub address for the profile link
   const npub = nip19.npubEncode(pubkey);
 
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="inline-flex items-center gap-1">
       <Link
         to={`/profile/${npub}`}
-        className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+        className="glass inline-flex items-center gap-2 rounded-full py-1.5 pl-1.5 pr-4 transition-transform hover:scale-[1.03]"
       >
-        <Avatar className="h-6 w-6" shape={shape}>
+        <Avatar className="h-7 w-7" shape={shape}>
           <AvatarImage src={profileImage} alt={displayName} />
           <AvatarFallback>{displayName.slice(0, 2)}</AvatarFallback>
         </Avatar>
-        <span className="text-sm text-muted-foreground">
-          Created by {displayName}
+        <span className="text-sm">
+          <span className="text-muted-foreground">Woven by </span>
+          <span className="font-semibold">{displayName}</span>
         </span>
       </Link>
       <UserActionsMenu pubkey={pubkey} authorName={displayName} />
+    </div>
+  );
+}
+
+/** Glass section card for below-the-fold content. */
+function PosterSection({
+  title,
+  children,
+  className,
+}: {
+  title?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn("glass rounded-3xl p-4 sm:p-6", className)}>
+      {title && <h3 className="font-display font-semibold text-lg mb-3">{title}</h3>}
+      {children}
+    </section>
+  );
+}
+
+/** One-shot emoji burst for the "Going" moment. Parent unmounts it after ~1s. */
+function EmojiBurst() {
+  const pieces = useMemo(() => {
+    const glyphs = ["🎉", "✨", "🎊", "💜"];
+    return Array.from({ length: 14 }, (_, i) => ({
+      x: (Math.random() * 2 - 1) * 130,
+      y: -(40 + Math.random() * 130),
+      r: (Math.random() * 2 - 1) * 100,
+      delay: Math.random() * 0.12,
+      glyph: glyphs[i % glyphs.length],
+    }));
+  }, []);
+
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0">
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          className="fx-burst text-xl"
+          style={
+            {
+              "--burst-x": `${p.x}px`,
+              "--burst-y": `${p.y}px`,
+              "--burst-r": `${p.r}deg`,
+              animationDelay: `${p.delay}s`,
+            } as CSSProperties
+          }
+        >
+          {p.glyph}
+        </span>
+      ))}
     </div>
   );
 }
@@ -114,11 +211,10 @@ export function EventDetail() {
     useSingleEvent(eventId);
   const { user } = useCurrentUser();
   const { mutate: publishRSVP } = useNostrPublish();
-  const [rsvpStatus, setRsvpStatus] = useState<
-    "accepted" | "declined" | "tentative"
-  >("accepted");
+  const [submittingStatus, setSubmittingStatus] = useState<RSVPStatus | null>(null);
   const [rsvpNote, setRsvpNote] = useState("");
-  const [isSubmittingRSVP, setIsSubmittingRSVP] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [burstKey, setBurstKey] = useState(0);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const queryClient = useQueryClient();
@@ -155,10 +251,16 @@ export function EventDetail() {
     decodingError = "No event identifier provided";
   }
 
-  const event = singleEvent as DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting;
+  const event = singleEvent as CalendarEvent;
 
   // Extract event theme (Ditto themes via c/f/bg tags)
   const eventTheme = useEventTheme(event);
+
+  // Ambient effect from the fx tag (Living Poster layer)
+  const effect = useMemo(
+    () => (event?.tags ? parseEffectFromTags(event.tags) : null),
+    [event?.tags],
+  );
 
   // Extract event participants from p tags (NIP-52)
   const eventParticipants = event?.tags
@@ -175,6 +277,8 @@ export function EventDetail() {
   const isHost = user?.pubkey === event?.pubkey;
   const imageUrl = event?.tags.find((tag) => tag[0] === "image")?.[1];
   const eventIdentifier = event?.tags.find((tag) => tag[0] === "d")?.[1];
+  const title = event?.tags.find((tag) => tag[0] === "title")?.[1] || "Untitled";
+  const location = event?.tags.find((tag) => tag[0] === "location")?.[1];
 
   // Fetch RSVPs for this specific event (targeted query instead of fetching all events)
   const eventAddress = eventIdentifier ? `${event?.kind}:${event?.pubkey}:${eventIdentifier}` : null;
@@ -217,15 +321,15 @@ export function EventDetail() {
   const userRSVP = latestRSVPs.find((e) => e.pubkey === user?.pubkey);
   const currentStatus = userRSVP?.tags.find(
     (tag) => tag[0] === "status"
-  )?.[1] as "accepted" | "declined" | "tentative" | undefined;
+  )?.[1] as RSVPStatus | undefined;
   const currentNote = userRSVP?.content;
 
-  // When the current status changes (component re-renders), sync it with rsvpStatus
+  // Clear the one-shot burst overlay after its animation finishes
   useEffect(() => {
-    if (currentStatus) {
-      setRsvpStatus(currentStatus);
-    }
-  }, [currentStatus]);
+    if (!burstKey) return;
+    const timer = setTimeout(() => setBurstKey(0), 1000);
+    return () => clearTimeout(timer);
+  }, [burstKey]);
 
   // Enhanced event update handler with proper refresh
   const handleEventUpdated = async () => {
@@ -252,21 +356,17 @@ export function EventDetail() {
   // Early return for loading states
   if (isLoading || isRefreshing) {
     return (
-      <div className="container px-0 sm:px-4 py-2 sm:py-6">
-        <Card className="rounded-none sm:rounded-lg">
-          <CardContent className="p-6">
-            <div className="text-center py-12">
-              <div className="inline-flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
-                <span>
-                  {isRefreshing
-                    ? "Refreshing event details..."
-                    : "Loading event..."}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="container max-w-3xl px-4 py-16">
+        <div className="glass rounded-3xl p-6 text-center">
+          <div className="inline-flex items-center gap-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+            <span>
+              {isRefreshing
+                ? "Refreshing event details..."
+                : "Loading event..."}
+            </span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -274,14 +374,10 @@ export function EventDetail() {
   // Early return for decoding errors
   if (decodingError) {
     return (
-      <div className="container px-0 sm:px-4 py-2 sm:py-6">
-        <Card className="rounded-none sm:rounded-lg">
-          <CardContent className="p-6">
-            <div className="text-center py-12">
-              <p className="text-destructive">{decodingError}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="container max-w-3xl px-4 py-16">
+        <div className="glass rounded-3xl p-6 text-center">
+          <p className="text-destructive">{decodingError}</p>
+        </div>
       </div>
     );
   }
@@ -289,250 +385,267 @@ export function EventDetail() {
   // Early return for event not found
   if (!event) {
     return (
-      <div className="container px-0 sm:px-4 py-2 sm:py-6">
-        <Card className="rounded-none sm:rounded-lg">
-          <CardContent className="p-6">
-            <div className="text-center py-12">
-              <h2 className="text-xl font-semibold mb-2">Event not found</h2>
-              <p className="text-muted-foreground mb-6">
-                The event you're looking for doesn't exist or may have been
-                deleted.
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => navigate("/")}
-                className="inline-flex items-center gap-2"
-              >
-                <span>← Back to Events</span>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="container max-w-3xl px-4 py-16">
+        <div className="glass rounded-3xl p-8 text-center">
+          <h2 className="font-display text-xl font-semibold mb-2">Event not found</h2>
+          <p className="text-muted-foreground mb-6">
+            The event you're looking for doesn't exist or may have been
+            deleted.
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-2"
+          >
+            <span>← Back to Events</span>
+          </Button>
+        </div>
       </div>
     );
   }
 
-  const handleRSVP = async () => {
-    if (!user || !eventIdentifier) return;
+  const handleRSVP = (status: RSVPStatus) => {
+    if (!user || !eventIdentifier || submittingStatus) return;
 
-    setIsSubmittingRSVP(true);
-    try {
-      const tags = [
-        ["e", event.id],
-        ["a", `${event.kind}:${event.pubkey}:${eventIdentifier}`],
-        ["d", crypto.randomUUID()],
-        ["status", rsvpStatus],
-        ["p", event.pubkey],
-      ];
+    setSubmittingStatus(status);
+    const tags = [
+      ["e", event.id],
+      ["a", `${event.kind}:${event.pubkey}:${eventIdentifier}`],
+      ["d", crypto.randomUUID()],
+      ["status", status],
+      ["p", event.pubkey],
+    ];
 
-      await publishRSVP(
-        {
-          kind: 31925,
-          content: rsvpNote,
-          tags,
+    publishRSVP(
+      {
+        kind: 31925,
+        content: rsvpNote,
+        tags,
+      },
+      {
+        onSuccess: () => {
+          toast.success(RSVP_TOASTS[status]);
+          setRsvpNote("");
+          setNoteOpen(false);
+          if (status === "accepted") setBurstKey(Date.now());
+          // Invalidate and refetch RSVPs for this event
+          queryClient.invalidateQueries({ queryKey: ["eventRSVPs"] });
         },
-        {
-          onSuccess: () => {
-            toast.success("RSVP submitted successfully!");
-            setRsvpNote("");
-            // Invalidate and refetch RSVPs for this event
-            queryClient.invalidateQueries({ queryKey: ["eventRSVPs"] });
-          },
-        }
-      );
-    } catch (error) {
-      toast.error("Failed to submit RSVP");
-      console.error("Error submitting RSVP:", error);
-    } finally {
-      setIsSubmittingRSVP(false);
-    }
+        onError: (error) => {
+          toast.error("Failed to submit RSVP");
+          console.error("Error submitting RSVP:", error);
+        },
+        onSettled: () => setSubmittingStatus(null),
+      }
+    );
   };
 
+  const eyebrow = formatPosterEyebrow(event);
+  const platformIcon = isLiveEventType(event) ? getPlatformIcon(event) : null;
+  const goingCount = acceptedRSVPs.length;
+  const safeImageUrl = sanitizeUrl(imageUrl);
+
   const content = (
-    <div className="container max-w-4xl px-0 sm:px-4 py-2 sm:py-8">
-      <Card className="rounded-none sm:rounded-lg">
-        <div className="aspect-video w-full overflow-hidden">
-          <img
-            src={sanitizeUrl(imageUrl) || "/default-calendar.png"}
-            alt={
-              event.tags.find((tag) => tag[0] === "title")?.[1] ||
-              "Event image"
-            }
-            className="w-full h-full object-cover"
-          />
-        </div>
-        <CardHeader className="p-3 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
-            <div className="space-y-1 sm:space-y-2">
-              <CardTitle className="flex items-center gap-2">
-                {isLiveEventType(event) && getPlatformIcon(event) && (
-                  <span 
-                    className="text-2xl flex-shrink-0" 
-                    title={`Live on ${getPlatformIcon(event)?.name}`}
-                  >
-                    {getPlatformIcon(event)?.icon}
-                  </span>
-                )}
-                <span className="flex-1">
-                  {event.tags.find((tag) => tag[0] === "title")?.[1]}
-                </span>
-              </CardTitle>
-              <EventAuthor pubkey={event.pubkey} />
+    <div className="relative">
+      {/* ---- The Living Poster ---- */}
+      <section className="relative flex min-h-[68svh] flex-col justify-end overflow-hidden">
+        <div className="absolute inset-0" aria-hidden>
+          {safeImageUrl ? (
+            <img
+              src={safeImageUrl}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="h-full w-full">
+              <div className="absolute -left-24 -top-24 h-96 w-96 rounded-full bg-primary/30 blur-3xl" />
+              <div className="absolute -right-24 top-1/3 h-96 w-96 rounded-full bg-glow2/25 blur-3xl" />
+              <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-primary/20 blur-3xl" />
             </div>
-            {user && (
-              <div className="flex items-center gap-1 sm:gap-2 self-start sm:self-auto">
-                <ContactOrganizerDialog
-                  organizerPubkey={event.pubkey}
-                  eventTitle={
-                    event.tags.find((tag) => tag[0] === "title")?.[1] || "Event"
-                  }
-                />
-                <CalendarOptions
-                  event={event as DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShareDialogOpen(true)}
-                  className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
-                >
-                  <Share2 className="h-4 w-4" />
-                  Share
-                </Button>
-              </div>
+          )}
+          <div className="absolute inset-0 poster-scrim" />
+        </div>
+
+        {effect && <EffectsLayer effect={effect} />}
+
+        <div className="container relative max-w-3xl px-4 pb-8 pt-32 sm:pb-12 animate-slide-up">
+          {eyebrow && (
+            <p className="mb-3 inline-flex items-center gap-2 rounded-full glass px-4 py-1.5 text-xs sm:text-sm font-semibold uppercase tracking-[0.18em]">
+              {platformIcon && (
+                <span title={`Live on ${platformIcon.name}`}>{platformIcon.icon}</span>
+              )}
+              {eyebrow}
+            </p>
+          )}
+          <h1 className="font-title text-balance break-words text-[clamp(2.25rem,8vw,4.5rem)] font-extrabold leading-[1.05] drop-shadow-[0_2px_20px_hsl(var(--background)/0.8)]">
+            {title}
+          </h1>
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <HostChip pubkey={event.pubkey} />
+            {location && (
+              <span className="glass inline-flex max-w-full items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="truncate">{location}</span>
+              </span>
+            )}
+            {goingCount > 0 && (
+              <span className="glass inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm">
+                🎉 {goingCount} going
+              </span>
+            )}
+            {isPaidEvent && (
+              <span className="glass inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm">
+                🎟️ {formatAmount(parseInt(price, 10) || 0)}
+              </span>
             )}
           </div>
-        </CardHeader>
-        <CardContent className="p-3 sm:p-6 space-y-3 sm:space-y-4">
-          <div>
-            <h3 className="font-semibold flex items-center gap-2">📝 Description</h3>
-            <p className="text-muted-foreground whitespace-pre-wrap break-words">{event.content}</p>
-          </div>
 
-          <EventCategories
-            categories={event.tags
-              .filter((tag) => tag[0] === "t")
-              .map((tag) => tag[1])}
-          />
-
-          <div>
-            <h3 className="font-semibold flex items-center gap-2">📍 Location</h3>
-            <LocationDisplay
-              location={event.tags.find((tag) => tag[0] === "location")?.[1] || ""}
-            />
-          </div>
-
-          {eventParticipants.length > 0 && (
-            <ParticipantDisplay participants={eventParticipants} />
-          )}
-
-          {/* Live Event Section */}
-          {isLiveEvent(event) && (
-            <div>
-              <h3 className="font-semibold flex items-center gap-2 mb-3">
-                🎥 Live Event Details
-              </h3>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Badge className={cn(
-                    "px-3 py-1 rounded-full text-sm font-semibold",
-                    event.kind === 30311 && getLiveEventStatus(event as LiveEvent) === 'live' 
-                      ? "bg-red-500 text-white animate-pulse" 
-                      : "bg-blue-500 text-white"
-                  )}>
-                    {event.kind === 30311 && getLiveEventStatus(event as LiveEvent) === 'live' ? (
-                      <>
-                        <span className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse"></span>
-                        LIVE NOW
-                      </>
-                    ) : (
-                      <>
-                        <span className="w-2 h-2 bg-white rounded-full mr-1"></span>
-                        LIVE EVENT
-                      </>
-                    )}
-                  </Badge>
-                  {event.kind === 30311 && (
-                    <Badge variant="outline" className="text-xs">
-                      Status: {getLiveEventStatus(event as LiveEvent)}
-                    </Badge>
-                  )}
-                </div>
-                
-                {sanitizeUrl(getViewingUrl(event)) && (
-                  <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-xl border border-blue-200 dark:border-blue-800">
-                    <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">
-                      🎥 Watch Live
-                    </h4>
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={sanitizeUrl(getViewingUrl(event))!}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 dark:text-blue-400 hover:underline font-medium text-sm break-all"
-                      >
-                        {getViewingUrl(event)}
-                      </a>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(getViewingUrl(event)!);
-                          toast.success("Stream URL copied to clipboard!");
-                        }}
-                        className="flex-shrink-0"
-                      >
-                        Copy
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                
-                {event.kind === 30311 && (
-                  <div className="text-sm text-muted-foreground">
-                    <p>This is a NIP-53 live event. Join the stream using the URL above or check the event description for more details.</p>
-                  </div>
-                )}
-              </div>
+          {user && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <ContactOrganizerDialog
+                organizerPubkey={event.pubkey}
+                eventTitle={title}
+              />
+              <CalendarOptions event={event} />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShareDialogOpen(true)}
+                className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3"
+              >
+                <Share2 className="h-4 w-4" />
+                Share
+              </Button>
             </div>
           )}
+        </div>
+      </section>
 
-          <div>
-            <h3 className="font-semibold flex items-center gap-2">🕒 Date & Time</h3>
-            <TimezoneDisplay event={event} showLocalTime={true} />
+      {/* ---- Below the fold ---- */}
+      <div className="container max-w-3xl space-y-5 px-4 pb-44 pt-2 md:pb-36">
+        <PosterSection title="About this party 📝">
+          <p className="whitespace-pre-wrap break-words text-muted-foreground">
+            {event.content}
+          </p>
+          <div className="mt-3">
+            <EventCategories
+              categories={event.tags
+                .filter((tag) => tag[0] === "t")
+                .map((tag) => tag[1])}
+            />
           </div>
+        </PosterSection>
 
-          <div>
-            <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm sm:text-base">
-              <span className="text-base sm:text-lg">🧑‍🤝‍🧑</span>
-              <span>Attendees</span>
-            </h3>
-            <div className="space-y-3 sm:space-y-4">
+        {/* Live Event Section */}
+        {isLiveEvent(event) && (
+          <PosterSection title="Live event 🎥">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge className={cn(
+                  "px-3 py-1 rounded-full text-sm font-semibold",
+                  event.kind === 30311 && getLiveEventStatus(event as LiveEvent) === 'live'
+                    ? "bg-red-500 text-white animate-pulse"
+                    : "bg-blue-500 text-white"
+                )}>
+                  {event.kind === 30311 && getLiveEventStatus(event as LiveEvent) === 'live' ? (
+                    <>
+                      <span className="w-2 h-2 bg-white rounded-full mr-1 animate-pulse"></span>
+                      LIVE NOW
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-2 h-2 bg-white rounded-full mr-1"></span>
+                      LIVE EVENT
+                    </>
+                  )}
+                </Badge>
+                {event.kind === 30311 && (
+                  <Badge variant="outline" className="text-xs">
+                    Status: {getLiveEventStatus(event as LiveEvent)}
+                  </Badge>
+                )}
+              </div>
+
+              {sanitizeUrl(getViewingUrl(event)) && (
+                <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                  <h4 className="mb-2 font-medium">🎥 Watch Live</h4>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={sanitizeUrl(getViewingUrl(event))!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="break-all text-sm font-medium text-primary hover:underline"
+                    >
+                      {getViewingUrl(event)}
+                    </a>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(getViewingUrl(event)!);
+                        toast.success("Stream URL copied to clipboard!");
+                      }}
+                      className="flex-shrink-0"
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {event.kind === 30311 && (
+                <div className="text-sm text-muted-foreground">
+                  <p>This is a NIP-53 live event. Join the stream using the URL above or check the event description for more details.</p>
+                </div>
+              )}
+            </div>
+          </PosterSection>
+        )}
+
+        <PosterSection title="When & where 🗺️">
+          <div className="space-y-3">
+            <TimezoneDisplay event={event} showLocalTime={true} />
+            <LocationDisplay location={location || ""} />
+            {eventParticipants.length > 0 && (
+              <ParticipantDisplay participants={eventParticipants} />
+            )}
+          </div>
+        </PosterSection>
+
+        <PosterSection title="The guest thread 🧵">
+          <div className="woven-line mb-4 rounded-full" />
+          {latestRSVPs.length === 0 ? (
+            <p className="text-muted-foreground">
+              No one's woven in yet. Be the first ✨
+            </p>
+          ) : (
+            <div className="space-y-4">
               {acceptedRSVPs.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
                     <Badge
                       variant="outline"
                       className="bg-green-500/10 text-green-500 text-xs"
                     >
-                      Going
+                      Going ✨
                     </Badge>
                     <span className="text-xs sm:text-sm text-muted-foreground">
                       {acceptedRSVPs.length}{" "}
                       {acceptedRSVPs.length === 1 ? "person" : "people"}
                     </span>
                   </div>
-                  <RSVPAvatars pubkeys={acceptedPubkeys} />
+                  <RSVPAvatars pubkeys={acceptedPubkeys} maxVisible={8} />
                 </div>
               )}
               {tentativeRSVPs.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
                     <Badge
                       variant="outline"
                       className="bg-yellow-500/10 text-yellow-500 text-xs"
                     >
-                      Maybe
+                      Maybe 🤔
                     </Badge>
                     <span className="text-xs sm:text-sm text-muted-foreground">
                       {tentativeRSVPs.length}{" "}
@@ -544,12 +657,12 @@ export function EventDetail() {
               )}
               {declinedRSVPs.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
                     <Badge
                       variant="outline"
                       className="bg-red-500/10 text-red-500 text-xs"
                     >
-                      Can't Go
+                      Can't 😢
                     </Badge>
                     <span className="text-xs sm:text-sm text-muted-foreground">
                       {declinedRSVPs.length}{" "}
@@ -560,141 +673,145 @@ export function EventDetail() {
                 </div>
               )}
             </div>
-          </div>
-
-          {user && !isHost && (
-            <div className="border-t pt-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold flex items-center gap-2"><Users className="h-5 w-5 text-primary" /> RSVP</h3>
-                {currentStatus && (
-                  <Badge
-                    variant="outline"
-                    className={getStatusColor(currentStatus)}
-                  >
-                    {getStatusLabel(currentStatus)}
-                  </Badge>
-                )}
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    {currentStatus ? "Change Status" : "Select Status"}
-                  </label>
-                  <Select
-                    value={rsvpStatus}
-                    onValueChange={(
-                      value: "accepted" | "declined" | "tentative"
-                    ) => setRsvpStatus(value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select your status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="accepted">I'm going</SelectItem>
-                      <SelectItem value="tentative">Maybe</SelectItem>
-                      <SelectItem value="declined">Can't go</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-2 block">
-                    {currentNote ? "Update Note" : "Add Note (Optional)"}
-                  </label>
-                  <Textarea
-                    placeholder="Add a note to your RSVP..."
-                    value={rsvpNote}
-                    onChange={(e) => setRsvpNote(e.target.value)}
-                    className="min-h-[100px]"
-                  />
-                  {currentNote && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Current note: {currentNote}
-                    </p>
-                  )}
-                </div>
-                <Button
-                  onClick={handleRSVP}
-                  disabled={isSubmittingRSVP}
-                  className="px-12 py-4 text-lg font-semibold rounded-2xl bg-party-gradient hover:opacity-90 transition-all duration-200 hover:scale-105 shadow-lg flex items-center justify-center gap-2 mx-auto"
-                >
-                  {isSubmittingRSVP ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Submitting...
-                    </div>
-                  ) : (
-                    <>
-                      <Calendar className="h-5 w-5 text-primary" />
-                      <span>{currentStatus ? "Update RSVP" : "Submit RSVP"}</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
           )}
+        </PosterSection>
 
-          {isPaidEvent && (
-            <div className="border-t pt-4">
-              <h3 className="font-semibold mb-2 flex items-center gap-2">🎟️ Ticket Information</h3>
-              <p className="text-muted-foreground mb-4">
-                Price: {formatAmount(parseInt(price, 10) || 0)}
+        {isPaidEvent && (
+          <PosterSection title="Tickets 🎟️">
+            <p className="mb-4 text-muted-foreground">
+              Price: {formatAmount(parseInt(price, 10) || 0)}
+            </p>
+            {user ? (
+              <ZapButton
+                pubkey={event.pubkey}
+                displayName={title}
+                lightningAddress={lightningAddress || ""}
+                eventId={event.id}
+                eventKind={event.kind}
+                eventIdentifier={eventIdentifier}
+                fixedAmount={parseInt(price, 10) || 0}
+                buttonText="🎟️ Purchase Ticket"
+                className="w-full bg-party-gradient text-primary-foreground font-bold shadow-glow hover:scale-105 transition-transform duration-200 relative overflow-hidden"
+              />
+            ) : (
+              <p className="text-muted-foreground">
+                Please log in to purchase a ticket
               </p>
-              {user ? (
-                <ZapButton
-                  pubkey={event.pubkey}
-                  displayName={
-                    event.tags.find((tag) => tag[0] === "title")?.[1] || "Event"
-                  }
-                  lightningAddress={lightningAddress || ""}
-                  eventId={event.id}
-                  eventKind={event.kind}
-                  eventIdentifier={eventIdentifier}
-                  fixedAmount={parseInt(price, 10) || 0}
-                  buttonText="🎟️ Purchase Ticket"
-                  className="w-full bg-gradient-to-r from-primary to-primary/70 text-primary-foreground font-bold shadow-lg hover:scale-105 transition-transform duration-200 relative overflow-hidden"
-                />
-              ) : (
-                <p className="text-muted-foreground">
-                  Please log in to purchase a ticket
+            )}
+          </PosterSection>
+        )}
+
+        {isHost && (
+          <ReminderPanel
+            event={event}
+            isHost={isHost}
+            participants={participants}
+          />
+        )}
+
+        {isHost && (
+          <ZapReceipts eventId={event.id} eventPubkey={event.pubkey} />
+        )}
+
+        <PosterSection>
+          <EventComments
+            eventId={event.id}
+            eventTitle={title}
+            eventKind={event.kind}
+            eventPubkey={event.pubkey}
+            eventIdentifier={eventIdentifier}
+          />
+        </PosterSection>
+
+        {isHost && (
+          <div className="flex gap-2">
+            <EditEvent event={event} onEventUpdated={handleEventUpdated} />
+            <DeleteEvent
+              eventId={event.id}
+              eventKind={event.kind}
+              onDeleted={() => navigate("/")}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ---- Pinned RSVP dock ---- */}
+      {user && !isHost && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-20 z-40 px-4 md:bottom-6">
+          {noteOpen && (
+            <div className="pointer-events-auto mx-auto mb-2 w-full max-w-md glass rounded-3xl p-3 animate-slide-up">
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Add a note to your RSVP
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setNoteOpen(false)}
+                  aria-label="Close note"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <Textarea
+                placeholder="Bringing snacks! 🍕"
+                value={rsvpNote}
+                onChange={(e) => setRsvpNote(e.target.value)}
+                className="min-h-[60px] border-none bg-transparent px-1 focus-visible:ring-0"
+              />
+              {currentNote && (
+                <p className="mt-1 px-1 text-xs text-muted-foreground">
+                  Current note: {currentNote}
                 </p>
               )}
+              <p className="mt-1 px-1 text-xs text-muted-foreground">
+                Pick a pill below to send it ✨
+              </p>
             </div>
           )}
-
-          {isHost && (
-            <ReminderPanel
-              event={event as DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting}
-              isHost={isHost}
-              participants={participants}
-            />
-          )}
-
-          {event && (
-            <div className="space-y-8">
-              {isHost && (
-                <ZapReceipts eventId={event.id} eventPubkey={event.pubkey} />
+          <div className="pointer-events-auto relative mx-auto flex w-fit max-w-full items-center gap-1 rounded-full glass p-1.5 shadow-glow">
+            {burstKey > 0 && <EmojiBurst key={burstKey} />}
+            {RSVP_PILLS.map(({ status, label, emoji }) => {
+              const isActive = currentStatus === status;
+              const isSubmitting = submittingStatus === status;
+              return (
+                <button
+                  key={status}
+                  type="button"
+                  disabled={submittingStatus !== null}
+                  onClick={() => handleRSVP(status)}
+                  aria-pressed={isActive}
+                  className={cn(
+                    "touch-target inline-flex items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-60 sm:px-5",
+                    isActive
+                      ? "bg-party-gradient text-primary-foreground shadow-glow"
+                      : "hover:bg-accent hover:text-accent-foreground",
+                  )}
+                >
+                  {isSubmitting ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <span>{emoji}</span>
+                  )}
+                  {label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setNoteOpen((open) => !open)}
+              aria-label="Add a note to your RSVP"
+              aria-expanded={noteOpen}
+              className={cn(
+                "touch-target inline-flex items-center justify-center rounded-full p-2.5 transition-colors",
+                noteOpen || rsvpNote
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground",
               )}
-              <EventComments
-                eventId={event.id}
-                eventTitle={
-                  event.tags.find((tag) => tag[0] === "title")?.[1] || "Event"
-                }
-                eventKind={event.kind}
-                eventPubkey={event.pubkey}
-                eventIdentifier={eventIdentifier}
-              />
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      {user && user.pubkey === event.pubkey && (
-        <div className="mt-4 flex gap-2">
-          <EditEvent event={event as DateBasedEvent | TimeBasedEvent | LiveEvent | RoomMeeting} onEventUpdated={handleEventUpdated} />
-          <DeleteEvent
-            eventId={event.id}
-            eventKind={event.kind}
-            onDeleted={() => navigate("/")}
-          />
+            >
+              <MessageSquarePlus className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       )}
 

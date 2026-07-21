@@ -298,6 +298,168 @@
   font-family: var(--title-font-family, 'Outfit Variable', Outfit, system-ui, sans-serif);
 }
 
+/* --------------------------------------------------------------------------
+ * Living Poster — ambient effect particles (EffectsLayer)
+ * Pure transform/opacity loops so they composite on the GPU.
+ * ------------------------------------------------------------------------ */
+.fx-particle {
+  position: absolute;
+  display: inline-block;
+  will-change: transform;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.fx-paused .fx-particle {
+  animation-play-state: paused;
+}
+
+.fx-fall {
+  animation-name: fx-fall;
+}
+
+.fx-fall-sway {
+  animation-name: fx-fall-sway;
+}
+
+.fx-float {
+  animation-name: fx-float;
+}
+
+.fx-twinkle {
+  animation-name: fx-twinkle;
+  animation-timing-function: ease-in-out;
+}
+
+.fx-laser {
+  top: -20%;
+  height: 140%;
+  width: 2px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    hsl(var(--primary) / 0.65),
+    hsl(var(--glow-2) / 0.5),
+    transparent
+  );
+  transform-origin: top center;
+  animation-name: fx-laser;
+  animation-timing-function: ease-in-out;
+}
+
+@keyframes fx-fall {
+  0% {
+    transform: translateY(-6vh) rotate(0deg);
+  }
+  100% {
+    transform: translateY(106vh) rotate(540deg);
+  }
+}
+
+@keyframes fx-fall-sway {
+  0% {
+    transform: translateY(-6vh) translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(25vh) translateX(4vw) rotate(90deg);
+  }
+  50% {
+    transform: translateY(52vh) translateX(-3vw) rotate(200deg);
+  }
+  75% {
+    transform: translateY(79vh) translateX(3vw) rotate(300deg);
+  }
+  100% {
+    transform: translateY(106vh) translateX(-2vw) rotate(420deg);
+  }
+}
+
+@keyframes fx-float {
+  0% {
+    transform: translateY(0) translateX(0) rotate(-4deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  90% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-85vh) translateX(3vw) rotate(6deg);
+    opacity: 0;
+  }
+}
+
+@keyframes fx-twinkle {
+  0%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.15;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes fx-laser {
+  0%,
+  100% {
+    transform: rotate(14deg);
+    opacity: 0.25;
+  }
+  50% {
+    transform: rotate(-14deg);
+    opacity: 0.9;
+  }
+}
+
+/* RSVP "I'm in" emoji burst */
+.fx-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  animation: fx-burst 0.9s ease-out forwards;
+}
+
+@keyframes fx-burst {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y)))
+      scale(1.15) rotate(var(--burst-r, 0deg));
+    opacity: 0;
+  }
+}
+
+/* Poster hero: fade the backdrop into the app background */
+.poster-scrim {
+  background: linear-gradient(
+    to top,
+    hsl(var(--background)) 0%,
+    hsl(var(--background) / 0.72) 32%,
+    hsl(var(--background) / 0.25) 65%,
+    hsl(var(--background) / 0.45) 100%
+  );
+}
+
+/* The woven thread — Plektos' motif where Partiful uses stars */
+.woven-line {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--primary) / 0.7) 18%,
+    hsl(var(--glow-2) / 0.7) 55%,
+    hsl(var(--primary) / 0.5) 82%,
+    transparent
+  );
+}
+
 /* Respect reduced-motion preferences across all custom animations */
 @media (prefers-reduced-motion: reduce) {
   html {

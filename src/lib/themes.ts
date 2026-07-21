@@ -161,6 +161,75 @@ function getLuminance(hsl: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// WCAG contrast clamp
+// ---------------------------------------------------------------------------
+
+/** Convert h, s, l values to linear-ish sRGB channels in 0-1. */
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const sNorm = s / 100;
+  const lNorm = l / 100;
+  const c = (1 - Math.abs(2 * lNorm - 1)) * sNorm;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = lNorm - c / 2;
+
+  let r = 0, g = 0, b = 0;
+  if (h < 60) { r = c; g = x; }
+  else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; }
+  else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; }
+  else { r = c; b = x; }
+
+  return [r + m, g + m, b + m];
+}
+
+/** WCAG relative luminance (0-1) of an HSL string. */
+function relativeLuminance(hsl: string): number {
+  const [h, s, l] = parseHsl(hsl);
+  const channels = hslToRgb(h, s, l).map((v) =>
+    v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4),
+  );
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+/** WCAG contrast ratio (1-21) between two HSL strings. */
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/**
+ * Clamp `fg` so it reads against `bg` at the given WCAG ratio (AA = 4.5).
+ *
+ * Host-picked theme colors come from untrusted taste — keep the hue and
+ * saturation (the vibe survives) but walk lightness away from the background
+ * until the pair passes. Saturated hues can cap out below the target even at
+ * extreme lightness, in which case fall back to pure white/black.
+ */
+export function ensureReadable(fg: string, bg: string, min = 4.5): string {
+  if (contrastRatio(fg, bg) >= min) return fg;
+
+  // White text beats black on this background iff bg luminance < ~0.1791
+  // (the crossover point of the WCAG ratio formula).
+  const lighten = relativeLuminance(bg) < 0.1791;
+  const [h, s, l] = parseHsl(fg);
+
+  let candidate = fg;
+  for (let next = l; next > 0 && next < 100; ) {
+    next = lighten ? Math.min(next + 5, 100) : Math.max(next - 5, 0);
+    candidate = formatHsl(h, s, next);
+    if (contrastRatio(candidate, bg) >= min) return candidate;
+  }
+
+  const extreme = lighten ? "0 0% 100%" : "0 0% 0%";
+  return contrastRatio(extreme, bg) > contrastRatio(candidate, bg)
+    ? extreme
+    : candidate;
+}
+
+// ---------------------------------------------------------------------------
 // Token Derivation — 3 colors → 19 CSS tokens
 // ---------------------------------------------------------------------------
 
@@ -193,34 +262,46 @@ export function deriveTokensFromCore(
   const mutedL = isDark ? Math.min(bgL + 8, 100) : Math.max(bgL - 4, 0);
   const muted = formatHsl(bgH, bgS, mutedL);
 
-  // Muted foreground: desaturated mid-luminance
+  // Muted foreground: desaturated mid-luminance, clamped to stay readable on
+  // both the plain background and muted surfaces (host colors are untrusted).
   const mutedFgL = isDark ? 55 : 46;
-  const mutedForeground = formatHsl(bgH, Math.min(bgS, 16), mutedFgL);
+  const mutedForeground = ensureReadable(
+    ensureReadable(formatHsl(bgH, Math.min(bgS, 16), mutedFgL), background),
+    muted,
+  );
 
   // Border: primary hue with reduced saturation
   const borderS = Math.min(priS, 25);
   const borderL = isDark ? Math.min(bgL + 15, 40) : Math.max(bgL - 10, 60);
   const border = formatHsl(priH, borderS, borderL);
 
-  // Primary foreground: white or text based on contrast
-  const priLum = getLuminance(primary);
-  const primaryForeground = priLum > 60 ? "0 0% 0%" : "0 0% 100%";
+  // Primary foreground: whichever of white/black actually contrasts harder
+  const primaryForeground =
+    contrastRatio("0 0% 100%", primary) >= contrastRatio("0 0% 0%", primary)
+      ? "0 0% 100%"
+      : "0 0% 0%";
+
+  // Text clamped per surface it sits on — WCAG AA, vibe-preserving.
+  const foreground = ensureReadable(text, background);
+  const cardForeground = ensureReadable(text, card);
+  const secondaryForeground = ensureReadable(text, secondary);
+  const accentForeground = ensureReadable(text, primary);
 
   return {
     background,
-    foreground: text,
+    foreground,
     card,
-    cardForeground: text,
+    cardForeground,
     popover: card,
-    popoverForeground: text,
+    popoverForeground: cardForeground,
     primary,
     primaryForeground,
     secondary,
-    secondaryForeground: text,
+    secondaryForeground,
     muted,
     mutedForeground,
     accent: primary,
-    accentForeground: text,
+    accentForeground,
     destructive: isDark ? "0 63% 31%" : "0 84.2% 60.2%",
     destructiveForeground: isDark ? "0 86% 97%" : "210 40% 98%",
     border,
