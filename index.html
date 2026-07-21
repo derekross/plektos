@@ -28,7 +28,24 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#0b0b12" />
+
+    <!-- Apply the saved (or default dark) theme before first paint to avoid a light flash -->
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("plektos-theme") || "dark";
+          if (theme === "system") {
+            theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          }
+          document.documentElement.classList.add(theme);
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
@@ -63,7 +80,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Plektos" />
     <meta name="application-name" content="Plektos" />
-    <meta name="msapplication-TileColor" content="#ffffff" />
+    <meta name="msapplication-TileColor" content="#0b0b12" />
     <meta name="msapplication-TileImage" content="/icon-192.png" />
     <meta name="msapplication-config" content="/browserconfig.xml" />
     

@@ -20,7 +20,7 @@ export function App() {
   }, []);
 
   return (
-    <ThemeProvider defaultTheme="system" storageKey="plektos-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="plektos-theme">
       <NotificationProvider>
         <NotificationManager>
           <ThemeColorMeta />
