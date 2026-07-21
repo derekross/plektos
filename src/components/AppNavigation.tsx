@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { PlektosLogo } from "@/components/PlektosLogo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -91,14 +92,12 @@ export function AppNavigation({ children }: AppNavigationProps) {
   const DesktopSidebar = () => (
     <Sidebar side="left" variant="sidebar" collapsible="offcanvas">
       <SidebarHeader className="border-b border-border/50">
-        <div className="flex items-center gap-3 px-4 py-3 group">
-          <div className="relative">
-            <img src="/icon-192.png" alt="Plektos" className="h-10 w-10 transition-transform group-hover:scale-110" />
-            <div className="absolute -inset-1 bg-party-gradient rounded-full opacity-0 group-hover:opacity-20 transition-opacity blur-sm" />
-          </div>
-          <span className="font-bold text-xl bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            Plektos
-          </span>
+        <div className="flex items-center px-4 py-3 group">
+          <PlektosLogo
+            size={36}
+            withWordmark
+            className="transition-transform group-hover:scale-105"
+          />
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -113,7 +112,7 @@ export function AppNavigation({ children }: AppNavigationProps) {
                   isActive={item.isActive} 
                   size="lg"
                   className={cn(
-                    "rounded-2xl transition-all duration-200 hover:scale-105",
+                    "rounded-full transition-all duration-200 hover:scale-105",
                     item.isActive && "bg-primary/15 text-primary glow-primary"
                   )}
                 >
@@ -143,8 +142,8 @@ export function AppNavigation({ children }: AppNavigationProps) {
   // Mobile bottom navigation
   const MobileBottomNav = () => {
     return (
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-lg border-t border-border/50 md:hidden safe-area-bottom mx-2 mb-2 rounded-2xl shadow-lg shadow-primary/10">
-        <nav className="flex items-center h-16 px-2">
+      <div className="fixed bottom-0 left-0 right-0 z-50 glass md:hidden safe-area-bottom mx-4 mb-3 rounded-full shadow-lg shadow-primary/10">
+        <nav className="flex items-center h-16 px-3">
           {/* Create a grid-like layout for even spacing */}
           <div className="flex items-center justify-between w-full">
             {navigationItems.map((item) => {
@@ -156,7 +155,7 @@ export function AppNavigation({ children }: AppNavigationProps) {
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    "flex flex-col items-center justify-center gap-0.5 h-12 w-12 p-0 rounded-xl touch-target transition-all duration-200",
+                    "flex flex-col items-center justify-center gap-0.5 h-12 w-12 p-0 rounded-full touch-target transition-all duration-200",
                     item.isActive 
                       ? "text-primary bg-primary/15 scale-105 glow-primary" 
                       : "text-muted-foreground hover:text-primary hover:bg-primary/10"
@@ -181,7 +180,7 @@ export function AppNavigation({ children }: AppNavigationProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="flex flex-col items-center justify-center gap-0.5 h-12 w-12 p-0 rounded-xl touch-target text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200"
+                  className="flex flex-col items-center justify-center gap-0.5 h-12 w-12 p-0 rounded-full touch-target text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all duration-200"
                 >
                   <User className="!h-5 !w-5 !min-h-5 !min-w-5" />
                   <span className="text-[10px] font-medium leading-tight">Profile</span>
@@ -207,14 +206,12 @@ export function AppNavigation({ children }: AppNavigationProps) {
           {/* Mobile header */}
           <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-background/95 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 safe-area-top">
             <div className="container flex h-16 items-center justify-between">
-              <Link to="/" className="flex items-center space-x-3 group">
-                <div className="relative">
-                  <img src="/icon-192.png" alt="Plektos" className="h-10 w-10 transition-transform group-hover:scale-110" />
-                  <div className="absolute -inset-1 bg-party-gradient rounded-full opacity-0 group-hover:opacity-20 transition-opacity blur-sm" />
-                </div>
-                <span className="font-bold text-xl bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-                  Plektos
-                </span>
+              <Link to="/" className="flex items-center group">
+                <PlektosLogo
+                  size={36}
+                  withWordmark
+                  className="transition-transform group-hover:scale-105"
+                />
               </Link>
               {user && (
                 <div className="flex items-center space-x-2">

@@ -6,6 +6,7 @@ import { NostrLoginProvider } from "@nostrify/react/login";
 import NostrProvider from "@/components/NostrProvider";
 import { App } from "./App";
 import "@fontsource-variable/outfit";
+import "@fontsource-variable/bricolage-grotesque";
 import "./index.css";
 
 const queryClient = new QueryClient({

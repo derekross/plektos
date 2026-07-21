@@ -21,7 +21,12 @@ export default {
 		extend: {
 			fontFamily: {
 				sans: ['Outfit Variable', 'Outfit', 'system-ui', 'sans-serif'],
+				display: ['Bricolage Grotesque Variable', 'Outfit Variable', 'Outfit', 'system-ui', 'sans-serif'],
 				title: ['var(--title-font-family)', 'Outfit Variable', 'Outfit', 'system-ui', 'sans-serif'],
+			},
+			boxShadow: {
+				glow: '0 0 20px hsl(var(--primary) / 0.35), 0 2px 8px hsl(var(--primary) / 0.2)',
+				'glow-lg': '0 0 32px hsl(var(--primary) / 0.45), 0 4px 12px hsl(var(--glow-2) / 0.3)',
 			},
 			colors: {
 				border: 'hsl(var(--border))',
@@ -33,6 +38,7 @@ export default {
 					DEFAULT: 'hsl(var(--primary))',
 					foreground: 'hsl(var(--primary-foreground))'
 				},
+				glow2: 'hsl(var(--glow-2))',
 				secondary: {
 					DEFAULT: 'hsl(var(--secondary))',
 					foreground: 'hsl(var(--secondary-foreground))'
