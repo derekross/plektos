@@ -5,6 +5,7 @@ import {
   type ThemeConfig,
 } from "@/lib/themes";
 import { sanitizeCssUrl, sanitizeFontFamily } from "@/lib/utils";
+import { isPosterFontFamily, loadPosterFont } from "@/lib/posterFonts";
 
 interface EventThemeProviderProps {
   theme: ThemeConfig;
@@ -74,6 +75,12 @@ export function EventThemeProvider({ theme, children }: EventThemeProviderProps)
       // could break out of the CSS string context.
       const family = sanitizeFontFamily(font.family);
       if (!family) continue;
+
+      // Marquee faces ship with the app (no url in the tag) — fetch the
+      // self-hosted chunk so guests see the host's poster font.
+      if (isPosterFontFamily(font.family)) {
+        void loadPosterFont(font.family);
+      }
 
       if (font.url) {
         const url = sanitizeCssUrl(font.url);

@@ -1,13 +1,20 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useAuthor } from "@/hooks/useAuthor";
 import { useNostrPublish } from "@/hooks/useNostrPublish";
+import { genUserName } from "@/lib/genUserName";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { TimePicker } from "@/components/ui/time-picker";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { LocationSearch } from "@/components/LocationSearch";
 import { ImageUpload } from "@/components/ImageUpload";
 import { CategorySelector } from "@/components/CategorySelector";
@@ -17,7 +24,14 @@ import { RecurringEventPreview } from "@/components/RecurringEventPreview";
 import { EventCategory } from "@/lib/eventCategories";
 import { ThemePicker } from "@/components/ThemePicker";
 import { EventThemeProvider } from "@/components/EventThemeProvider";
-import { buildThemeTags, type ThemeConfig } from "@/lib/themes";
+import { PosterPreview } from "@/components/PosterPreview";
+import { PosterPresetRow } from "@/components/PosterPresetRow";
+import { FontCarousel } from "@/components/FontCarousel";
+import { EffectPicker } from "@/components/EffectPicker";
+import { buildThemeTags, FEATURED_THEMES, type ThemeConfig } from "@/lib/themes";
+import { buildEffectTag, type EventEffect } from "@/lib/effects";
+import { posterTitleFont } from "@/lib/posterFonts";
+import { presetThemeConfig, type PosterPreset } from "@/lib/posterPresets";
 import { toast } from "sonner";
 import {
   Select,
@@ -33,14 +47,32 @@ import {
 } from "@/lib/eventTimezone";
 import { encodeGeohash } from "@/lib/geolocation";
 import { generateRecurringEventDates } from "@/lib/recurringEventUtils";
-import { PartyPopper, Target, FileText, Calendar as CalendarIcon, Flag, Clock, Globe, Rocket } from "lucide-react";
+import {
+  PartyPopper,
+  Target,
+  FileText,
+  Calendar as CalendarIcon,
+  Flag,
+  Clock,
+  Globe,
+  Rocket,
+  ArrowLeft,
+  ArrowRight,
+  Palette,
+  ChevronDown,
+} from "lucide-react";
 
 export function CreateEvent() {
   const navigate = useNavigate();
   const { user } = useCurrentUser();
+  const author = useAuthor(user?.pubkey);
   const { mutate: createEvent } = useNostrPublish();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [step, setStep] = useState<"vibe" | "details">("vibe");
   const [eventTheme, setEventTheme] = useState<ThemeConfig | null>(null);
+  const [titleFontFamily, setTitleFontFamily] = useState<string | null>(null);
+  const [effect, setEffect] = useState<EventEffect | null>(null);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -81,7 +113,39 @@ export function CreateEvent() {
     } as EventbriteRecurringConfig,
   });
 
+  const hostName =
+    author.data?.metadata?.name ?? (user ? genUserName(user.pubkey) : undefined);
 
+  // The theme that actually ships: picked colors (or the default poster vibe
+  // when only a face is chosen) with the marquee face merged in as the title
+  // font. Purple Haze is also what PosterPreview shows before any choice, so
+  // guests see exactly what the host saw.
+  const effectiveTheme: ThemeConfig | null = useMemo(() => {
+    if (!eventTheme && !titleFontFamily) return null;
+    const base = eventTheme ?? { colors: FEATURED_THEMES[0].colors };
+    if (!titleFontFamily) return base;
+    return {
+      ...base,
+      fonts: [
+        ...(base.fonts?.filter((f) => f.role !== "title") ?? []),
+        posterTitleFont(titleFontFamily),
+      ],
+    };
+  }, [eventTheme, titleFontFamily]);
+
+  const handleSelectPreset = (preset: PosterPreset | null) => {
+    if (!preset) {
+      setActivePresetId(null);
+      setEventTheme(null);
+      setTitleFontFamily(null);
+      setEffect(null);
+      return;
+    }
+    setActivePresetId(preset.identifier);
+    setEventTheme(presetThemeConfig(preset));
+    setTitleFontFamily(preset.titleFont);
+    setEffect(preset.effect);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,27 +190,11 @@ export function CreateEvent() {
       }
     }
 
-    console.log("Form data at submission:", {
-      imageUrl: formData.imageUrl,
-      eventbriteRecurringConfig: formData.eventbriteRecurringConfig,
-    });
-
     setIsSubmitting(true);
     try {
       // Determine if this is a time-based event
       const hasTime = formData.startTime || formData.endTime;
       const eventKind = hasTime ? 31923 : 31922;
-
-      console.log("Creating event with:", {
-        hasTime,
-        eventKind,
-        startDate: formData.startDate,
-        startTime: formData.startTime,
-        endDate: formData.endDate,
-        endTime: formData.endTime,
-        timezone: formData.timezone,
-        recurringEnabled: formData.eventbriteRecurringConfig.enabled
-      });
 
       // Generate recurring event dates if enabled
       let eventDates;
@@ -155,7 +203,7 @@ export function CreateEvent() {
           // Use Eventbrite-style config
           const recurringConfig = {
             enabled: true,
-            pattern: (formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' : 
+            pattern: (formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' :
                      formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly') as 'daily' | 'weekly' | 'monthly',
             interval: formData.eventbriteRecurringConfig.repeatEvery,
             maxOccurrences: formData.eventbriteRecurringConfig.maxOccurrences || 6,
@@ -166,7 +214,7 @@ export function CreateEvent() {
             } : undefined,
             timeMode: formData.eventbriteRecurringConfig.timeMode,
           };
-          
+
           eventDates = generateRecurringEventDates(
             formData.startDate,
             formData.endDate,
@@ -183,7 +231,7 @@ export function CreateEvent() {
             maxOccurrences: 1,
             timeMode: 'single' as const,
           };
-          
+
           eventDates = generateRecurringEventDates(
             formData.startDate,
             formData.endDate,
@@ -198,8 +246,6 @@ export function CreateEvent() {
         setIsSubmitting(false);
         return;
       }
-
-      console.log("Generated event dates:", eventDates);
 
       // Create events for each date
       const createEventPromises = eventDates.map(async (eventDate, index) => {
@@ -240,7 +286,7 @@ export function CreateEvent() {
 
         // Create a unique identifier for the event
         const uniqueId = formData.title.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now() + "-" + index;
-      
+
         const tags = [
           ["d", uniqueId], // Unique identifier
           ["title", formData.title],
@@ -257,11 +303,11 @@ export function CreateEvent() {
             9 // 9 characters gives ~4.8m precision
           );
           tags.push(["g", geohash]);
-          
+
           // Also store raw coordinates for backwards compatibility
           tags.push(["lat", formData.locationDetails.lat.toString()]);
           tags.push(["lon", formData.locationDetails.lng.toString()]);
-          
+
           if (formData.locationDetails.placeId) {
             tags.push(["place_id", formData.locationDetails.placeId]);
           }
@@ -283,10 +329,6 @@ export function CreateEvent() {
 
         // Add image URL if provided
         if (formData.imageUrl) {
-          console.log("Adding image to event:", {
-            imageUrl: formData.imageUrl,
-          });
-          // Add the image tag
           tags.push(["image", formData.imageUrl]);
         }
 
@@ -305,9 +347,14 @@ export function CreateEvent() {
           );
         }
 
-        // Add theme tags if a theme is selected
-        if (eventTheme) {
-          tags.push(...buildThemeTags(eventTheme));
+        // Add theme tags (colors + poster font) if a vibe is set
+        if (effectiveTheme) {
+          tags.push(...buildThemeTags(effectiveTheme));
+        }
+
+        // Add the ambient effect layer
+        if (effect) {
+          tags.push(buildEffectTag(effect));
         }
 
         // Add recurring event information if this is part of a series
@@ -327,30 +374,30 @@ export function CreateEvent() {
 
       // Wait for all events to be created
       const results = await Promise.allSettled(createEventPromises);
-      
+
       const successful = results.filter(result => result.status === 'fulfilled').length;
       const failed = results.filter(result => result.status === 'rejected').length;
 
       if (successful > 0) {
         if (formData.eventbriteRecurringConfig.enabled && eventDates.length > 1) {
-          toast.success(`Successfully created ${successful} recurring events! They should appear on the home page shortly.`);
+          toast.success(`${successful} parties published! 🎉 They should appear on the home page shortly.`);
         } else {
-          toast.success("Event created successfully! It should appear on the home page shortly.");
+          toast.success("Party published! 🎉 It should appear on the home page shortly.");
         }
-        
+
         if (failed > 0) {
           toast.warning(`${failed} events failed to create. Please try again.`);
         }
-        
+
         // Navigate back to home page where the user can see their new events
         navigate("/");
       } else {
-        toast.error("Failed to create events. Please try again.");
+        toast.error("Failed to publish your party. Please try again.");
       }
-      
+
       setIsSubmitting(false);
     } catch (error) {
-      toast.error("Failed to create event");
+      toast.error("Failed to publish your party");
       console.error("Error creating event:", error);
       setIsSubmitting(false);
     }
@@ -374,299 +421,385 @@ export function CreateEvent() {
     );
   }
 
+  const vibeStep = (
+    <div className="space-y-6 max-w-2xl mx-auto">
+      <div className="space-y-3">
+        <Label htmlFor="title" className="text-lg font-semibold flex items-center gap-2">
+          <Target className="h-5 w-5 text-primary" /> What's the party called?
+        </Label>
+        <Input
+          id="title"
+          value={formData.title}
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, title: e.target.value }))
+          }
+          placeholder="Rooftop Solstice Rave, Taco Tuesday, Satoshi's Birthday…"
+          className="text-lg py-3 rounded-2xl border-2 focus:border-primary transition-all duration-200"
+          required
+        />
+      </div>
+
+      {/* The hero: a live poster that restyles as choices land */}
+      <PosterPreview
+        title={formData.title}
+        hostName={hostName}
+        theme={effectiveTheme}
+        effect={effect}
+        startDate={formData.startDate}
+        startTime={formData.startTime}
+      />
+
+      <PosterPresetRow value={activePresetId} onSelect={handleSelectPreset} />
+
+      <FontCarousel
+        value={titleFontFamily}
+        onChange={(family) => {
+          setTitleFontFamily(family);
+          setActivePresetId(null);
+        }}
+      />
+
+      <EffectPicker
+        value={effect}
+        onChange={(fx) => {
+          setEffect(fx);
+          setActivePresetId(null);
+        }}
+      />
+
+      <Collapsible>
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full rounded-2xl justify-between"
+          >
+            <span className="flex items-center gap-2">
+              <Palette className="h-4 w-4 text-primary" />
+              More themes &amp; custom colors
+            </span>
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-4">
+          <ThemePicker
+            value={eventTheme}
+            onChange={(theme) => {
+              setEventTheme(theme);
+              setActivePresetId(null);
+            }}
+          />
+        </CollapsibleContent>
+      </Collapsible>
+
+      <div className="flex justify-center pt-2">
+        <Button
+          type="button"
+          disabled={!formData.title.trim()}
+          onClick={() => setStep("details")}
+          className="px-10 py-4 text-lg font-semibold rounded-2xl bg-party-gradient hover:opacity-90 transition-all duration-200 hover:scale-105 shadow-lg"
+        >
+          <span className="flex items-center gap-2">
+            Next: the details <ArrowRight className="h-5 w-5" />
+          </span>
+        </Button>
+      </div>
+    </div>
+  );
+
+  const detailsStep = (
+    <form onSubmit={handleSubmit} className="space-y-8 max-w-4xl mx-auto">
+      <div className="flex justify-start">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => setStep("vibe")}
+          className="rounded-2xl text-muted-foreground"
+        >
+          <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to the vibe
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        <Label htmlFor="description" className="text-lg font-semibold flex items-center gap-2">
+          <FileText className="h-5 w-5 text-primary" /> Description
+        </Label>
+        <Textarea
+          id="description"
+          value={formData.description}
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, description: e.target.value }))
+          }
+          placeholder="Tell people what makes this party special..."
+          className="min-h-32 rounded-2xl border-2 focus:border-primary transition-all duration-200 resize-none"
+          required
+        />
+      </div>
+
+      <LocationSearch
+        value={formData.location}
+        onChange={(value) =>
+          setFormData((prev) => ({ ...prev, location: value }))
+        }
+        onLocationSelect={(location) =>
+          setFormData((prev) => ({
+            ...prev,
+            location: location.address,
+            locationDetails: location,
+          }))
+        }
+      />
+
+      <ImageUpload
+        value={formData.imageUrl}
+        onChange={(url) => {
+          setFormData((prev) => ({ ...prev, imageUrl: url }));
+        }}
+      />
+
+      <CategorySelector
+        selectedCategories={formData.categories}
+        onCategoriesChange={(categories) =>
+          setFormData((prev) => ({ ...prev, categories }))
+        }
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-3">
+          <Label htmlFor="startDate" className="text-lg font-semibold flex items-center gap-2">
+            <CalendarIcon className="h-5 w-5 text-primary" /> Start Date
+          </Label>
+          <Calendar
+            id="startDate"
+            mode="single"
+            selected={
+              formData.startDate
+                ? new Date(formData.startDate + "T12:00:00Z")
+                : undefined
+            }
+            onSelect={(date) => {
+              if (date) {
+                // Create date in UTC noon to avoid timezone issues
+                const selectedDate = new Date(
+                  Date.UTC(
+                    date.getFullYear(),
+                    date.getMonth(),
+                    date.getDate(),
+                    12,
+                    0,
+                    0,
+                    0
+                  )
+                );
+                setFormData((prev) => ({
+                  ...prev,
+                  startDate: selectedDate.toISOString().split("T")[0],
+                }));
+              }
+            }}
+            disabled={(date) => {
+              const today = new Date();
+              today.setUTCHours(0, 0, 0, 0);
+              return date < today;
+            }}
+            className="rounded-2xl border-2"
+          />
+        </div>
+        <div className="space-y-3">
+          <Label htmlFor="endDate" className="text-lg font-semibold flex items-center gap-2">
+            <Flag className="h-5 w-5 text-primary" /> End Date
+          </Label>
+          <Calendar
+            id="endDate"
+            mode="single"
+            selected={
+              formData.endDate
+                ? new Date(formData.endDate + "T12:00:00Z")
+                : undefined
+            }
+            onSelect={(date) => {
+              if (date) {
+                // Create date in UTC noon to avoid timezone issues
+                const selectedDate = new Date(
+                  Date.UTC(
+                    date.getFullYear(),
+                    date.getMonth(),
+                    date.getDate(),
+                    12,
+                    0,
+                    0,
+                    0
+                  )
+                );
+                setFormData((prev) => ({
+                  ...prev,
+                  endDate: selectedDate.toISOString().split("T")[0],
+                }));
+              }
+            }}
+            disabled={(date) => {
+              const startDate = formData.startDate
+                ? new Date(formData.startDate + "T12:00:00Z")
+                : new Date();
+              startDate.setUTCHours(0, 0, 0, 0);
+              return date < startDate;
+            }}
+            className="rounded-2xl border-2"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-3">
+          <Label className="text-lg font-semibold flex items-center gap-2">
+            <Clock className="h-5 w-5 text-primary" /> Start Time (Optional)
+          </Label>
+          <TimePicker
+            value={formData.startTime}
+            onChange={(value) =>
+              setFormData((prev) => ({ ...prev, startTime: value }))
+            }
+          />
+        </div>
+        <div className="space-y-3">
+          <Label className="text-lg font-semibold flex items-center gap-2">
+            <Clock className="h-5 w-5 text-primary" /> End Time (Optional)
+          </Label>
+          <TimePicker
+            value={formData.endTime}
+            onChange={(value) =>
+              setFormData((prev) => ({ ...prev, endTime: value }))
+            }
+          />
+        </div>
+      </div>
+
+      {(formData.startTime || formData.endTime) && (
+        <div className="space-y-3">
+          <Label className="text-lg font-semibold flex items-center gap-2">
+            <Globe className="h-5 w-5 text-primary" /> Timezone
+          </Label>
+          <Select
+            value={formData.timezone}
+            onValueChange={(value) =>
+              setFormData((prev) => ({ ...prev, timezone: value }))
+            }
+          >
+            <SelectTrigger className="rounded-2xl border-2 py-3">
+              <SelectValue placeholder="Select timezone" />
+            </SelectTrigger>
+            <SelectContent className="max-h-[400px]">
+              {getGroupedTimezoneOptions().map((group) => (
+                <div key={group.group}>
+                  <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
+                    {group.group}
+                  </div>
+                  {group.options.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </div>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <PaidTicketForm
+        onTicketInfoChange={(ticketInfo) =>
+          setFormData((prev) => ({ ...prev, ticketInfo }))
+        }
+      />
+
+      {/* Eventbrite-Style Recurring Event Form */}
+      <EventbriteStyleRecurringForm
+        config={{
+          ...formData.eventbriteRecurringConfig,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          timeSlots: [{
+            id: '1',
+            startTime: formData.startTime || '19:00',
+            endTime: formData.endTime || '22:00'
+          }]
+        }}
+        onChange={(eventbriteRecurringConfig) =>
+          setFormData((prev) => ({ ...prev, eventbriteRecurringConfig }))
+        }
+      />
+
+      {formData.eventbriteRecurringConfig.enabled && formData.startDate && formData.endDate && (
+        <RecurringEventPreview
+          title={formData.title}
+          description={formData.description}
+          location={formData.location}
+          startDate={formData.startDate}
+          endDate={formData.endDate}
+          startTime={formData.startTime}
+          endTime={formData.endTime}
+          timezone={formData.timezone}
+          recurringConfig={{
+            enabled: true,
+            pattern: formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' :
+                     formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly',
+            interval: formData.eventbriteRecurringConfig.repeatEvery,
+            maxOccurrences: formData.eventbriteRecurringConfig.maxOccurrences || 6,
+            weeklyDays: formData.eventbriteRecurringConfig.repeatOnDays,
+            monthlyWeekday: formData.eventbriteRecurringConfig.monthlyPattern === 'weekday' ? {
+              week: formData.eventbriteRecurringConfig.monthlyWeek || 1,
+              day: formData.eventbriteRecurringConfig.monthlyWeekday || 1
+            } : undefined,
+            timeMode: formData.eventbriteRecurringConfig.timeMode,
+          }}
+        />
+      )}
+
+      <div className="flex justify-center pt-6">
+        <Button
+          type="submit"
+          disabled={isSubmitting}
+          className="px-12 py-4 text-lg font-semibold rounded-2xl bg-party-gradient hover:opacity-90 transition-all duration-200 hover:scale-105 shadow-lg"
+        >
+          {isSubmitting ? (
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Publishing your party...
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Rocket className="h-5 w-5" /> Publish party
+            </div>
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+
   const formContent = (
     <div className="container px-0 sm:px-4 py-2 sm:py-6 space-y-6 sm:space-y-8">
       <div className="px-3 sm:px-0 text-center space-y-4">
         <div className="flex justify-center"><PartyPopper className="h-12 w-12 text-primary" /></div>
         <div className="space-y-2">
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            Create Your Event
+          <h1 className="font-display text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+            Throw a party
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground">
-            Bring people together and create unforgettable experiences
+            {step === "vibe"
+              ? "Start with the vibe — the poster is the invitation"
+              : "Now the details — when, where, and how"}
           </p>
         </div>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-8 max-w-4xl mx-auto">
-        <div className="space-y-3">
-          <Label htmlFor="title" className="text-lg font-semibold flex items-center gap-2">
-            <Target className="h-5 w-5 text-primary" /> Event Title
-          </Label>
-          <Input
-            id="title"
-            value={formData.title}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, title: e.target.value }))
-            }
-            placeholder="What's the name of your amazing event?"
-            className="text-lg py-3 rounded-2xl border-2 focus:border-primary transition-all duration-200"
-            required
-          />
-        </div>
-
-        <div className="space-y-3">
-          <Label htmlFor="description" className="text-lg font-semibold flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary" /> Description
-          </Label>
-          <Textarea
-            id="description"
-            value={formData.description}
-            onChange={(e) =>
-              setFormData((prev) => ({ ...prev, description: e.target.value }))
-            }
-            placeholder="Tell people what makes this event special..."
-            className="min-h-32 rounded-2xl border-2 focus:border-primary transition-all duration-200 resize-none"
-            required
-          />
-        </div>
-
-        <LocationSearch
-          value={formData.location}
-          onChange={(value) =>
-            setFormData((prev) => ({ ...prev, location: value }))
-          }
-          onLocationSelect={(location) =>
-            setFormData((prev) => ({
-              ...prev,
-              location: location.address,
-              locationDetails: location,
-            }))
-          }
-        />
-
-        <ImageUpload
-          value={formData.imageUrl}
-          onChange={(url) => {
-            console.log("Setting image URL in form data:", url);
-            setFormData((prev) => ({ ...prev, imageUrl: url }));
-          }}
-        />
-
-        <CategorySelector
-          selectedCategories={formData.categories}
-          onCategoriesChange={(categories) =>
-            setFormData((prev) => ({ ...prev, categories }))
-          }
-        />
-
-        <ThemePicker value={eventTheme} onChange={setEventTheme} />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <Label htmlFor="startDate" className="text-lg font-semibold flex items-center gap-2">
-              <CalendarIcon className="h-5 w-5 text-primary" /> Start Date
-            </Label>
-            <Calendar
-              id="startDate"
-              mode="single"
-              selected={
-                formData.startDate
-                  ? new Date(formData.startDate + "T12:00:00Z")
-                  : undefined
-              }
-              onSelect={(date) => {
-                if (date) {
-                  // Create date in UTC noon to avoid timezone issues
-                  const selectedDate = new Date(
-                    Date.UTC(
-                      date.getFullYear(),
-                      date.getMonth(),
-                      date.getDate(),
-                      12,
-                      0,
-                      0,
-                      0
-                    )
-                  );
-                  setFormData((prev) => ({
-                    ...prev,
-                    startDate: selectedDate.toISOString().split("T")[0],
-                  }));
-                }
-              }}
-              disabled={(date) => {
-                const today = new Date();
-                today.setUTCHours(0, 0, 0, 0);
-                return date < today;
-              }}
-              className="rounded-2xl border-2"
-            />
-          </div>
-          <div className="space-y-3">
-            <Label htmlFor="endDate" className="text-lg font-semibold flex items-center gap-2">
-              <Flag className="h-5 w-5 text-primary" /> End Date
-            </Label>
-            <Calendar
-              id="endDate"
-              mode="single"
-              selected={
-                formData.endDate
-                  ? new Date(formData.endDate + "T12:00:00Z")
-                  : undefined
-              }
-              onSelect={(date) => {
-                if (date) {
-                  // Create date in UTC noon to avoid timezone issues
-                  const selectedDate = new Date(
-                    Date.UTC(
-                      date.getFullYear(),
-                      date.getMonth(),
-                      date.getDate(),
-                      12,
-                      0,
-                      0,
-                      0
-                    )
-                  );
-                  setFormData((prev) => ({
-                    ...prev,
-                    endDate: selectedDate.toISOString().split("T")[0],
-                  }));
-                }
-              }}
-              disabled={(date) => {
-                const startDate = formData.startDate
-                  ? new Date(formData.startDate + "T12:00:00Z")
-                  : new Date();
-                startDate.setUTCHours(0, 0, 0, 0);
-                return date < startDate;
-              }}
-              className="rounded-2xl border-2"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <Label className="text-lg font-semibold flex items-center gap-2">
-              <Clock className="h-5 w-5 text-primary" /> Start Time (Optional)
-            </Label>
-            <TimePicker
-              value={formData.startTime}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, startTime: value }))
-              }
-            />
-          </div>
-          <div className="space-y-3">
-            <Label className="text-lg font-semibold flex items-center gap-2">
-              <Clock className="h-5 w-5 text-primary" /> End Time (Optional)
-            </Label>
-            <TimePicker
-              value={formData.endTime}
-              onChange={(value) =>
-                setFormData((prev) => ({ ...prev, endTime: value }))
-              }
-            />
-          </div>
-        </div>
-
-        {(formData.startTime || formData.endTime) && (
-          <div className="space-y-3">
-            <Label className="text-lg font-semibold flex items-center gap-2">
-              <Globe className="h-5 w-5 text-primary" /> Timezone
-            </Label>
-            <Select
-              value={formData.timezone}
-              onValueChange={(value) =>
-                setFormData((prev) => ({ ...prev, timezone: value }))
-              }
-            >
-              <SelectTrigger className="rounded-2xl border-2 py-3">
-                <SelectValue placeholder="Select timezone" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[400px]">
-                {getGroupedTimezoneOptions().map((group) => (
-                  <div key={group.group}>
-                    <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
-                      {group.group}
-                    </div>
-                    {group.options.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </div>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
-        <PaidTicketForm
-          onTicketInfoChange={(ticketInfo) =>
-            setFormData((prev) => ({ ...prev, ticketInfo }))
-          }
-        />
-
-        {/* Eventbrite-Style Recurring Event Form */}
-        <EventbriteStyleRecurringForm
-          config={{
-            ...formData.eventbriteRecurringConfig,
-            startDate: formData.startDate,
-            endDate: formData.endDate,
-            timeSlots: [{
-              id: '1',
-              startTime: formData.startTime || '19:00',
-              endTime: formData.endTime || '22:00'
-            }]
-          }}
-          onChange={(eventbriteRecurringConfig) =>
-            setFormData((prev) => ({ ...prev, eventbriteRecurringConfig }))
-          }
-        />
-
-        {formData.eventbriteRecurringConfig.enabled && formData.startDate && formData.endDate && (
-          <RecurringEventPreview
-            title={formData.title}
-            description={formData.description}
-            location={formData.location}
-            startDate={formData.startDate}
-            endDate={formData.endDate}
-            startTime={formData.startTime}
-            endTime={formData.endTime}
-            timezone={formData.timezone}
-            recurringConfig={{
-              enabled: true,
-              pattern: formData.eventbriteRecurringConfig.repeatUnit === 'day' ? 'daily' : 
-                       formData.eventbriteRecurringConfig.repeatUnit === 'week' ? 'weekly' : 'monthly',
-              interval: formData.eventbriteRecurringConfig.repeatEvery,
-              maxOccurrences: formData.eventbriteRecurringConfig.maxOccurrences || 6,
-              weeklyDays: formData.eventbriteRecurringConfig.repeatOnDays,
-              monthlyWeekday: formData.eventbriteRecurringConfig.monthlyPattern === 'weekday' ? {
-                week: formData.eventbriteRecurringConfig.monthlyWeek || 1,
-                day: formData.eventbriteRecurringConfig.monthlyWeekday || 1
-              } : undefined,
-              timeMode: formData.eventbriteRecurringConfig.timeMode,
-            }}
-          />
-        )}
-
-        <div className="flex justify-center pt-6">
-          <Button 
-            type="submit" 
-            disabled={isSubmitting}
-            className="px-12 py-4 text-lg font-semibold rounded-2xl bg-party-gradient hover:opacity-90 transition-all duration-200 hover:scale-105 shadow-lg"
-          >
-            {isSubmitting ? (
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Creating Your Event...
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Rocket className="h-5 w-5 text-primary" /> Create Event
-              </div>
-            )}
-          </Button>
-        </div>
-      </form>
+      <div className="px-3 sm:px-0">
+        {step === "vibe" ? vibeStep : detailsStep}
+      </div>
     </div>
   );
 
-  // Wrap in EventThemeProvider so the creator sees a live preview of their chosen theme
-  if (eventTheme) {
-    return <EventThemeProvider theme={eventTheme}>{formContent}</EventThemeProvider>;
+  // Wrap in EventThemeProvider so the whole page bathes in the chosen vibe
+  if (effectiveTheme) {
+    return <EventThemeProvider theme={effectiveTheme}>{formContent}</EventThemeProvider>;
   }
 
   return formContent;

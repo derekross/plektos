@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -56,9 +56,16 @@ export function PaidTicketForm({ onTicketInfoChange, initialTicketInfo }: PaidTi
     }
   }, [useDefaultAddress, defaultLightningAddress]);
 
+  // Notify the parent only when the data changes. Depending on the callback
+  // identity loops forever when a parent passes an inline arrow (every
+  // notify -> parent setState -> new arrow -> effect refires).
+  const onTicketInfoChangeRef = useRef(onTicketInfoChange);
   useEffect(() => {
-    onTicketInfoChange(ticketInfo);
-  }, [ticketInfo, onTicketInfoChange]);
+    onTicketInfoChangeRef.current = onTicketInfoChange;
+  });
+  useEffect(() => {
+    onTicketInfoChangeRef.current(ticketInfo);
+  }, [ticketInfo]);
 
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value);
