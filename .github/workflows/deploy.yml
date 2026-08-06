@@ -23,14 +23,23 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Copy files to production server
-        uses: appleboy/scp-action@v0.1.4
+      # rsync, not scp: scp only copies INTO the target and never removes what
+      # is no longer in dist/. Vite content-hashes every bundle, so each build
+      # emits new filenames and the old generation stays forever — this webroot
+      # had accumulated 255 asset files (39 MB) from ~6 builds. --delete makes
+      # the webroot an exact mirror of dist/.
+      #
+      # .well-known is excluded on purpose: on this server it can hold
+      # hand-placed NIP-05 (nostr.json) and ACME challenge files that are not
+      # part of any build, and --delete would otherwise destroy them.
+      - name: Deploy to production server
+        uses: burnett01/rsync-deployments@7.0.1
         with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          port: ${{ secrets.PROD_PORT }}
-          source: "dist/*"
-          target: ${{ secrets.PROD_PATH }}
-          strip_components: 1
+          switches: -rlpt --delete --exclude='.well-known/'
+          path: dist/
+          remote_path: ${{ secrets.PROD_PATH }}
+          remote_host: ${{ secrets.PROD_HOST }}
+          remote_port: ${{ secrets.PROD_PORT }}
+          remote_user: ${{ secrets.PROD_USER }}
+          remote_key: ${{ secrets.PROD_SSH_KEY }}
 
