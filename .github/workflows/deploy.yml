@@ -35,11 +35,15 @@ jobs:
       - name: Deploy to production server
         uses: burnett01/rsync-deployments@v9
         with:
-          # --omit-dir-times: the webroot is root:deployers and the deploy user
-          # can write inside it but does not own it, so rsync's attempt to set
-          # the directory's own mtime fails with EPERM and exits 23 — turning a
-          # fully successful transfer into a red build.
-          switches: -rlpt --omit-dir-times --delete --exclude='.well-known/'
+          # No -p, plus --omit-dir-times: the webroot is root:deployers and the
+          # deploy user can write INSIDE it but does not own it. Preserving
+          # permissions or directory times makes rsync chmod/utimensat the
+          # target directory itself, which returns EPERM and exits 23 — turning
+          # a fully successful transfer into a red build.
+          # Files still land 644 root-group-inherited: the directory is setgid
+          # (2775 root:deployers), so new files get group deployers, and the
+          # deploy user's umask gives 644.
+          switches: -rlt --omit-dir-times --delete --exclude='.well-known/'
           path: dist/
           remote_path: ${{ secrets.PROD_PATH }}
           remote_host: ${{ secrets.PROD_HOST }}
