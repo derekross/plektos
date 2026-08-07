@@ -35,7 +35,11 @@ jobs:
       - name: Deploy to production server
         uses: burnett01/rsync-deployments@v9
         with:
-          switches: -rlpt --delete --exclude='.well-known/'
+          # --omit-dir-times: the webroot is root:deployers and the deploy user
+          # can write inside it but does not own it, so rsync's attempt to set
+          # the directory's own mtime fails with EPERM and exits 23 — turning a
+          # fully successful transfer into a red build.
+          switches: -rlpt --omit-dir-times --delete --exclude='.well-known/'
           path: dist/
           remote_path: ${{ secrets.PROD_PATH }}
           remote_host: ${{ secrets.PROD_HOST }}
