@@ -33,7 +33,7 @@ jobs:
       # hand-placed NIP-05 (nostr.json) and ACME challenge files that are not
       # part of any build, and --delete would otherwise destroy them.
       - name: Deploy to production server
-        uses: burnett01/rsync-deployments@7.0.1
+        uses: burnett01/rsync-deployments@v9
         with:
           switches: -rlpt --delete --exclude='.well-known/'
           path: dist/
