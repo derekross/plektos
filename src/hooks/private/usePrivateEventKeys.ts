@@ -41,44 +41,80 @@ export interface PrivateKeysState {
 
 const QUERY_KEY = ["private-event-keys"] as const;
 
+const keysQueryKey = (pubkey: string) => [...QUERY_KEY, pubkey];
+
+/** Minimal surface this module needs from the pool, so it is easy to call
+ *  outside a component. */
+interface Querier {
+  query(
+    filters: { kinds: number[]; authors: string[]; limit: number }[],
+    opts: { signal: AbortSignal; relays: string[] },
+  ): Promise<{ content: string; created_at: number; tags: string[][] }[]>;
+}
+
+interface Nip44Signer {
+  pubkey: string;
+  nip44: { decrypt(pubkey: string, data: string): Promise<string> };
+}
+
+/**
+ * Read and decrypt the key list.
+ *
+ * Deliberately a plain function rather than only a hook body: the write path
+ * has to re-read immediately before publishing, and `fetchQuery` needs a
+ * `queryFn` it can call even when no component is currently mounting this
+ * query. Registering it only inside `useQuery` is what produced a
+ * "Missing queryFn" crash the first time anyone created a private event from a
+ * page that never reads the list.
+ */
+export async function fetchPrivateEventKeys(
+  nostr: Querier,
+  user: Nip44Signer,
+  signal: AbortSignal,
+): Promise<PrivateKeysState> {
+  const events = await nostr.query(
+    [{ kinds: [KIND_COMMUNITY_LIST_FRAG], authors: [user.pubkey], limit: 100 }],
+    { signal, relays: [...PRIVATE_EVENT_RELAYS] },
+  );
+  if (events.length === 0) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: false };
+
+  // Newest event per `d` (fragment index) wins — these are addressable.
+  const newest = new Map<string, (typeof events)[number]>();
+  for (const ev of events) {
+    const d = ev.tags.find((t) => t[0] === "d")?.[1] ?? "0";
+    const prev = newest.get(d);
+    if (!prev || prev.created_at < ev.created_at) newest.set(d, ev);
+  }
+
+  const frags: FragList[] = [];
+  let anyFailed = false;
+  for (const ev of newest.values()) {
+    try {
+      frags.push(parseFragList(await user.nip44.decrypt(user.pubkey, ev.content)));
+    } catch {
+      anyFailed = true;
+    }
+  }
+
+  // Fragments present but none opened: a decrypt problem, not an empty list.
+  // Surfaced so the write path refuses rather than overwriting.
+  if (frags.length === 0) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: anyFailed };
+  return { list: defragment(frags), decryptFailed: anyFailed };
+}
+
 export function usePrivateEventKeys() {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
 
   return useQuery<PrivateKeysState>({
-    queryKey: [...QUERY_KEY, user?.pubkey ?? ""],
+    queryKey: keysQueryKey(user?.pubkey ?? ""),
     queryFn: async (c) => {
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(6000)]);
       if (!user?.signer.nip44) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: false };
-
-      const events = await nostr.query(
-        [{ kinds: [KIND_COMMUNITY_LIST_FRAG], authors: [user.pubkey], limit: 100 }],
-        { signal, relays: [...PRIVATE_EVENT_RELAYS] },
+      return fetchPrivateEventKeys(
+        nostr as unknown as Querier,
+        { pubkey: user.pubkey, nip44: user.signer.nip44 },
+        AbortSignal.any([c.signal, AbortSignal.timeout(8000)]),
       );
-      if (events.length === 0) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: false };
-
-      // Newest event per `d` (fragment index) wins — these are addressable.
-      const newest = new Map<string, (typeof events)[number]>();
-      for (const ev of events) {
-        const d = ev.tags.find((t) => t[0] === "d")?.[1] ?? "0";
-        const prev = newest.get(d);
-        if (!prev || prev.created_at < ev.created_at) newest.set(d, ev);
-      }
-
-      const frags: FragList[] = [];
-      let anyFailed = false;
-      for (const ev of newest.values()) {
-        try {
-          frags.push(parseFragList(await user.signer.nip44.decrypt(user.pubkey, ev.content)));
-        } catch {
-          anyFailed = true;
-        }
-      }
-
-      // Fragments present but none opened: a decrypt problem, not an empty
-      // list. Surfaced so the write path refuses rather than overwriting.
-      if (frags.length === 0) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: anyFailed };
-      return { list: defragment(frags), decryptFailed: anyFailed };
     },
     enabled: Boolean(user?.pubkey),
     staleTime: 30_000,
@@ -103,9 +139,18 @@ export function usePublishPrivateEventKeys() {
     mutationFn: async (reduce: (prev: CommunityList) => CommunityList) => {
       if (!user?.signer.nip44) throw new Error("This signer cannot encrypt (NIP-44 required).");
 
-      // Re-read immediately before writing — guard (3).
+      // Re-read immediately before writing — guard (3). The queryFn is passed
+      // explicitly: this runs from pages that never mount usePrivateEventKeys,
+      // where nothing has registered one.
+      const nip44 = user.signer.nip44;
       const fresh = await queryClient.fetchQuery<PrivateKeysState>({
-        queryKey: [...QUERY_KEY, user.pubkey],
+        queryKey: keysQueryKey(user.pubkey),
+        queryFn: () =>
+          fetchPrivateEventKeys(
+            nostr as unknown as Querier,
+            { pubkey: user.pubkey, nip44 },
+            AbortSignal.timeout(8000),
+          ),
         staleTime: 0,
       });
       if (fresh.decryptFailed) {
