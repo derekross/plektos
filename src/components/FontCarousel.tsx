@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ScrollRow } from "@/components/ui/scroll-row";
 import { Label } from "@/components/ui/label";
 import { Type } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,8 +27,7 @@ export function FontCarousel({ value, onChange }: FontCarouselProps) {
         <Type className="h-4 w-4 text-primary" />
         Poster font
       </Label>
-      <div
-        className="scrollbar-hide -mx-3 flex gap-2 overflow-x-auto px-3 pb-1"
+      <ScrollRow
         role="radiogroup"
         aria-label="Poster font"
       >
@@ -72,7 +72,7 @@ export function FontCarousel({ value, onChange }: FontCarouselProps) {
             </span>
           </button>
         ))}
-      </div>
+      </ScrollRow>
     </div>
   );
 }

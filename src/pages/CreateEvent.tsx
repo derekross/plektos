@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { WhenPicker } from "@/components/WhenPicker";
 import { PrivacySelector } from "@/components/private/PrivacySelector";
 import { PrivateImageUpload } from "@/components/private/PrivateImageUpload";
 import type { ImagePointer } from "@/concord/lib/types";
@@ -13,8 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
-import { TimePicker } from "@/components/ui/time-picker";
 import {
   Collapsible,
   CollapsibleContent,
@@ -39,14 +38,6 @@ import { posterTitleFont } from "@/lib/posterFonts";
 import { presetThemeConfig, type PosterPreset } from "@/lib/posterPresets";
 import { toast } from "sonner";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  getGroupedTimezoneOptions,
   getUserTimezone,
   createTimestampInTimezone,
 } from "@/lib/eventTimezone";
@@ -56,11 +47,7 @@ import {
   PartyPopper,
   Target,
   FileText,
-  Calendar as CalendarIcon,
-  Flag,
-  Clock,
-  Globe,
-  Rocket,
+  Calendar as Rocket,
   ArrowLeft,
   ArrowRight,
   Palette,
@@ -638,147 +625,16 @@ export function CreateEvent() {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <Label htmlFor="startDate" className="text-lg font-semibold flex items-center gap-2">
-            <CalendarIcon className="h-5 w-5 text-primary" /> Start Date
-          </Label>
-          <Calendar
-            id="startDate"
-            mode="single"
-            selected={
-              formData.startDate
-                ? new Date(formData.startDate + "T12:00:00Z")
-                : undefined
-            }
-            onSelect={(date) => {
-              if (date) {
-                // Create date in UTC noon to avoid timezone issues
-                const selectedDate = new Date(
-                  Date.UTC(
-                    date.getFullYear(),
-                    date.getMonth(),
-                    date.getDate(),
-                    12,
-                    0,
-                    0,
-                    0
-                  )
-                );
-                setFormData((prev) => ({
-                  ...prev,
-                  startDate: selectedDate.toISOString().split("T")[0],
-                }));
-              }
-            }}
-            disabled={(date) => {
-              const today = new Date();
-              today.setUTCHours(0, 0, 0, 0);
-              return date < today;
-            }}
-            className="rounded-2xl border-2"
-          />
-        </div>
-        <div className="space-y-3">
-          <Label htmlFor="endDate" className="text-lg font-semibold flex items-center gap-2">
-            <Flag className="h-5 w-5 text-primary" /> End Date
-          </Label>
-          <Calendar
-            id="endDate"
-            mode="single"
-            selected={
-              formData.endDate
-                ? new Date(formData.endDate + "T12:00:00Z")
-                : undefined
-            }
-            onSelect={(date) => {
-              if (date) {
-                // Create date in UTC noon to avoid timezone issues
-                const selectedDate = new Date(
-                  Date.UTC(
-                    date.getFullYear(),
-                    date.getMonth(),
-                    date.getDate(),
-                    12,
-                    0,
-                    0,
-                    0
-                  )
-                );
-                setFormData((prev) => ({
-                  ...prev,
-                  endDate: selectedDate.toISOString().split("T")[0],
-                }));
-              }
-            }}
-            disabled={(date) => {
-              const startDate = formData.startDate
-                ? new Date(formData.startDate + "T12:00:00Z")
-                : new Date();
-              startDate.setUTCHours(0, 0, 0, 0);
-              return date < startDate;
-            }}
-            className="rounded-2xl border-2"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <Label className="text-lg font-semibold flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary" /> Start Time (Optional)
-          </Label>
-          <TimePicker
-            value={formData.startTime}
-            onChange={(value) =>
-              setFormData((prev) => ({ ...prev, startTime: value }))
-            }
-          />
-        </div>
-        <div className="space-y-3">
-          <Label className="text-lg font-semibold flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary" /> End Time (Optional)
-          </Label>
-          <TimePicker
-            value={formData.endTime}
-            onChange={(value) =>
-              setFormData((prev) => ({ ...prev, endTime: value }))
-            }
-          />
-        </div>
-      </div>
-
-      {(formData.startTime || formData.endTime) && (
-        <div className="space-y-3">
-          <Label className="text-lg font-semibold flex items-center gap-2">
-            <Globe className="h-5 w-5 text-primary" /> Timezone
-          </Label>
-          <Select
-            value={formData.timezone}
-            onValueChange={(value) =>
-              setFormData((prev) => ({ ...prev, timezone: value }))
-            }
-          >
-            <SelectTrigger className="rounded-2xl border-2 py-3">
-              <SelectValue placeholder="Select timezone" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[400px]">
-              {getGroupedTimezoneOptions().map((group) => (
-                <div key={group.group}>
-                  <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
-                    {group.group}
-                  </div>
-                  {group.options.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </div>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <WhenPicker
+        value={{
+          startDate: formData.startDate,
+          startTime: formData.startTime,
+          endDate: formData.endDate,
+          endTime: formData.endTime,
+          timezone: formData.timezone,
+        }}
+        onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
+      />
 
       {/*
         Private parties get a chip-in instead of ticketing. Public zap
