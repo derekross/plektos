@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PrivateEventList } from "@/components/private/PrivateEventList";
 import { Link } from "react-router-dom";
 import {
   Card,
@@ -9,7 +10,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar, Ticket, History } from "lucide-react";
+import { Calendar, Ticket, History, Lock } from "lucide-react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useUserRSVPs, type UserRSVPWithEvent, type UserTicketWithEvent, type UserCreatedEvent } from "@/hooks/useUserRSVPs";
 import { LoginArea } from "@/components/auth/LoginArea";
@@ -181,8 +182,18 @@ export function MyTickets() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="flex gap-2">
           <TabsTrigger value="upcoming" className="flex items-center gap-1"><Calendar className="h-4 w-4 text-primary" /> Upcoming</TabsTrigger>
+          <TabsTrigger value="private" className="flex items-center gap-1"><Lock className="h-4 w-4 text-primary" /> Private</TabsTrigger>
           <TabsTrigger value="past" className="flex items-center gap-1"><History className="h-4 w-4 text-primary" /> Past</TabsTrigger>
         </TabsList>
+
+        {/*
+          Private events surface ONLY here. They publish no plaintext event, so
+          no feed, profile or search query can find them — this tab is the whole
+          discovery story for them.
+        */}
+        <TabsContent value="private" className="mt-6">
+          <PrivateEventList />
+        </TabsContent>
 
         <TabsContent value="upcoming" className="mt-6">
           {isLoading ? (

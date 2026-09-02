@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, type CSSProperties } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { PosterSection } from "@/components/PosterSection";
 import { useSingleEvent } from "@/lib/eventUtils";
 import { useEventRSVPs } from "@/hooks/useEventRSVPs";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -153,23 +154,6 @@ function HostChip({ pubkey }: { pubkey: string }) {
 }
 
 /** Glass section card for below-the-fold content. */
-function PosterSection({
-  title,
-  children,
-  className,
-}: {
-  title?: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={cn("glass rounded-3xl p-4 sm:p-6", className)}>
-      {title && <h3 className="font-display font-semibold text-lg mb-3">{title}</h3>}
-      {children}
-    </section>
-  );
-}
-
 /** One-shot emoji burst for the "Going" moment. Parent unmounts it after ~1s. */
 function EmojiBurst() {
   const pieces = useMemo(() => {

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ScrollRow } from "@/components/ui/scroll-row";
 import { Label } from "@/components/ui/label";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,8 +28,7 @@ export function PosterPresetRow({ value, onSelect }: PosterPresetRowProps) {
         <Sparkles className="h-4 w-4 text-primary" />
         Quick vibes
       </Label>
-      <div
-        className="scrollbar-hide -mx-3 flex gap-2 overflow-x-auto px-3 pb-1"
+      <ScrollRow
         role="radiogroup"
         aria-label="Quick vibes"
       >
@@ -67,7 +67,7 @@ export function PosterPresetRow({ value, onSelect }: PosterPresetRowProps) {
             </button>
           );
         })}
-      </div>
+      </ScrollRow>
     </div>
   );
 }

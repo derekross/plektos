@@ -32,6 +32,12 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               "wss://relay.damus.io",
               "wss://nos.lol",
               "wss://relay.ditto.pub",
+              // Added for private events: these store AND serve
+              // `{kinds:[1059], authors:[…]}`, which is the Concord stream
+              // query shape. See src/lib/private/relays.ts for the probe
+              // results, including which candidates failed and why.
+              "wss://jskitty.com/nostr",
+              "wss://relay.dreamith.to",
             ]}
           >
             <App />

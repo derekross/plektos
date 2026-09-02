@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { WhenPicker } from "@/components/WhenPicker";
+import { PrivacySelector } from "@/components/private/PrivacySelector";
+import { PrivateImageUpload } from "@/components/private/PrivateImageUpload";
+import type { ImagePointer } from "@/concord/lib/types";
+import { useCreatePrivateEvent } from "@/hooks/private/useCreatePrivateEvent";
+import { randomCalendarId } from "@/lib/private/calendar";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useAuthor } from "@/hooks/useAuthor";
 import { useNostrPublish } from "@/hooks/useNostrPublish";
@@ -8,8 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
-import { TimePicker } from "@/components/ui/time-picker";
 import {
   Collapsible,
   CollapsibleContent,
@@ -34,14 +38,6 @@ import { posterTitleFont } from "@/lib/posterFonts";
 import { presetThemeConfig, type PosterPreset } from "@/lib/posterPresets";
 import { toast } from "sonner";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  getGroupedTimezoneOptions,
   getUserTimezone,
   createTimestampInTimezone,
 } from "@/lib/eventTimezone";
@@ -51,11 +47,7 @@ import {
   PartyPopper,
   Target,
   FileText,
-  Calendar as CalendarIcon,
-  Flag,
-  Clock,
-  Globe,
-  Rocket,
+  Calendar as Rocket,
   ArrowLeft,
   ArrowRight,
   Palette,
@@ -69,6 +61,9 @@ export function CreateEvent() {
   const { mutate: createEvent } = useNostrPublish();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<"vibe" | "details">("vibe");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [coverEnc, setCoverEnc] = useState<ImagePointer>();
+  const createPrivate = useCreatePrivateEvent();
   const [eventTheme, setEventTheme] = useState<ThemeConfig | null>(null);
   const [titleFontFamily, setTitleFontFamily] = useState<string | null>(null);
   const [effect, setEffect] = useState<EventEffect | null>(null);
@@ -89,6 +84,10 @@ export function CreateEvent() {
     endDate: "",
     endTime: "",
     imageUrl: "",
+    chipInAmount: "",
+    cashapp: "",
+    venmo: "",
+    lightning: "",
     categories: [] as EventCategory[],
     ticketInfo: {
       enabled: false,
@@ -195,6 +194,57 @@ export function CreateEvent() {
       // Determine if this is a time-based event
       const hasTime = formData.startTime || formData.endTime;
       const eventKind = hasTime ? 31923 : 31922;
+
+      // ── Private party ──────────────────────────────────────────────────
+      // A private event is a Concord community, not a NIP-52 event on relays,
+      // so it takes its own path entirely: nothing below this branch is
+      // reachable for it, which is what keeps the plaintext publish, the
+      // optimistic public-feed cache patch and the `client` tag away from it.
+      //
+      // Recurrence is refused rather than silently ignored: each occurrence
+      // would mint its own community and its own key-list entry, and a weekly
+      // series would fill the list in months.
+      if (isPrivate) {
+        if (formData.eventbriteRecurringConfig.enabled) {
+          toast.error("Recurring private parties aren't supported yet — pick a single date.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        const start = hasTime
+          ? createTimestampInTimezone(
+              formData.startDate,
+              formData.startTime || "00:00",
+              formData.timezone,
+            ).toString()
+          : formData.startDate;
+
+        const created = await createPrivate.mutateAsync({
+          calendar: {
+            identifier: randomCalendarId(),
+            kind: eventKind,
+            title: formData.title,
+            description: formData.description,
+            location: formData.location || undefined,
+            // A private party's cover is encrypted, so it rides `image_enc`
+            // instead of the plain `image` URL tag.
+            imageEnc: coverEnc,
+            start,
+            ...(hasTime ? { startTzid: formData.timezone } : {}),
+            // Contribution extension — the same tag names Armada and the
+            // Concord events app already read, so interop is free.
+            ...(formData.chipInAmount ? { amount: formData.chipInAmount } : {}),
+            ...(formData.cashapp ? { cashapp: formData.cashapp } : {}),
+            ...(formData.venmo ? { venmo: formData.venmo } : {}),
+            ...(formData.lightning ? { lightning: formData.lightning } : {}),
+          },
+        });
+
+        toast.success("Private party created 🔒 Now invite your guests.");
+        navigate(`/private/${created.channelIdHex}`);
+        setIsSubmitting(false);
+        return;
+      }
 
       // Generate recurring event dates if enabled
       let eventDates;
@@ -439,6 +489,8 @@ export function CreateEvent() {
         />
       </div>
 
+      <PrivacySelector isPrivate={isPrivate} onChange={setIsPrivate} />
+
       {/* The hero: a live poster that restyles as choices land */}
       <PosterPreview
         title={formData.title}
@@ -550,12 +602,21 @@ export function CreateEvent() {
         }
       />
 
-      <ImageUpload
-        value={formData.imageUrl}
-        onChange={(url) => {
-          setFormData((prev) => ({ ...prev, imageUrl: url }));
-        }}
-      />
+      {/*
+        Private parties encrypt the cover before it leaves the device. The
+        ordinary uploader publishes the plaintext to Blossom the moment a file
+        is picked, which for a private party is the whole problem.
+      */}
+      {isPrivate ? (
+        <PrivateImageUpload value={coverEnc} onChange={setCoverEnc} />
+      ) : (
+        <ImageUpload
+          value={formData.imageUrl}
+          onChange={(url) => {
+            setFormData((prev) => ({ ...prev, imageUrl: url }));
+          }}
+        />
+      )}
 
       <CategorySelector
         selectedCategories={formData.categories}
@@ -564,153 +625,61 @@ export function CreateEvent() {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <Label htmlFor="startDate" className="text-lg font-semibold flex items-center gap-2">
-            <CalendarIcon className="h-5 w-5 text-primary" /> Start Date
-          </Label>
-          <Calendar
-            id="startDate"
-            mode="single"
-            selected={
-              formData.startDate
-                ? new Date(formData.startDate + "T12:00:00Z")
-                : undefined
-            }
-            onSelect={(date) => {
-              if (date) {
-                // Create date in UTC noon to avoid timezone issues
-                const selectedDate = new Date(
-                  Date.UTC(
-                    date.getFullYear(),
-                    date.getMonth(),
-                    date.getDate(),
-                    12,
-                    0,
-                    0,
-                    0
-                  )
-                );
-                setFormData((prev) => ({
-                  ...prev,
-                  startDate: selectedDate.toISOString().split("T")[0],
-                }));
-              }
-            }}
-            disabled={(date) => {
-              const today = new Date();
-              today.setUTCHours(0, 0, 0, 0);
-              return date < today;
-            }}
-            className="rounded-2xl border-2"
-          />
-        </div>
-        <div className="space-y-3">
-          <Label htmlFor="endDate" className="text-lg font-semibold flex items-center gap-2">
-            <Flag className="h-5 w-5 text-primary" /> End Date
-          </Label>
-          <Calendar
-            id="endDate"
-            mode="single"
-            selected={
-              formData.endDate
-                ? new Date(formData.endDate + "T12:00:00Z")
-                : undefined
-            }
-            onSelect={(date) => {
-              if (date) {
-                // Create date in UTC noon to avoid timezone issues
-                const selectedDate = new Date(
-                  Date.UTC(
-                    date.getFullYear(),
-                    date.getMonth(),
-                    date.getDate(),
-                    12,
-                    0,
-                    0,
-                    0
-                  )
-                );
-                setFormData((prev) => ({
-                  ...prev,
-                  endDate: selectedDate.toISOString().split("T")[0],
-                }));
-              }
-            }}
-            disabled={(date) => {
-              const startDate = formData.startDate
-                ? new Date(formData.startDate + "T12:00:00Z")
-                : new Date();
-              startDate.setUTCHours(0, 0, 0, 0);
-              return date < startDate;
-            }}
-            className="rounded-2xl border-2"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <Label className="text-lg font-semibold flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary" /> Start Time (Optional)
-          </Label>
-          <TimePicker
-            value={formData.startTime}
-            onChange={(value) =>
-              setFormData((prev) => ({ ...prev, startTime: value }))
-            }
-          />
-        </div>
-        <div className="space-y-3">
-          <Label className="text-lg font-semibold flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary" /> End Time (Optional)
-          </Label>
-          <TimePicker
-            value={formData.endTime}
-            onChange={(value) =>
-              setFormData((prev) => ({ ...prev, endTime: value }))
-            }
-          />
-        </div>
-      </div>
-
-      {(formData.startTime || formData.endTime) && (
-        <div className="space-y-3">
-          <Label className="text-lg font-semibold flex items-center gap-2">
-            <Globe className="h-5 w-5 text-primary" /> Timezone
-          </Label>
-          <Select
-            value={formData.timezone}
-            onValueChange={(value) =>
-              setFormData((prev) => ({ ...prev, timezone: value }))
-            }
-          >
-            <SelectTrigger className="rounded-2xl border-2 py-3">
-              <SelectValue placeholder="Select timezone" />
-            </SelectTrigger>
-            <SelectContent className="max-h-[400px]">
-              {getGroupedTimezoneOptions().map((group) => (
-                <div key={group.group}>
-                  <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
-                    {group.group}
-                  </div>
-                  {group.options.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </div>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
-      <PaidTicketForm
-        onTicketInfoChange={(ticketInfo) =>
-          setFormData((prev) => ({ ...prev, ticketInfo }))
-        }
+      <WhenPicker
+        value={{
+          startDate: formData.startDate,
+          startTime: formData.startTime,
+          endDate: formData.endDate,
+          endTime: formData.endTime,
+          timezone: formData.timezone,
+        }}
+        onChange={(patch) => setFormData((prev) => ({ ...prev, ...patch }))}
       />
+
+      {/*
+        Private parties get a chip-in instead of ticketing. Public zap
+        ticketing publishes a plaintext price and a NIP-57 zap request, neither
+        of which has a coordinate to point at for an encrypted event.
+      */}
+      {isPrivate ? (
+        <div className="space-y-3">
+          <Label className="text-lg font-semibold">Chip in? 💸 (optional)</Label>
+          <p className="text-sm text-muted-foreground">
+            A suggested amount and where to send it. Guests see this on the party page.
+          </p>
+          <Input
+            value={formData.chipInAmount}
+            onChange={(e) => setFormData((prev) => ({ ...prev, chipInAmount: e.target.value }))}
+            placeholder="Suggested amount in sats, e.g. 2000"
+            inputMode="numeric"
+            className="rounded-2xl"
+          />
+          <Input
+            value={formData.lightning}
+            onChange={(e) => setFormData((prev) => ({ ...prev, lightning: e.target.value }))}
+            placeholder="⚡ Lightning address (you@example.com)"
+            className="rounded-2xl"
+          />
+          <Input
+            value={formData.cashapp}
+            onChange={(e) => setFormData((prev) => ({ ...prev, cashapp: e.target.value }))}
+            placeholder="💵 Cash App ($handle)"
+            className="rounded-2xl"
+          />
+          <Input
+            value={formData.venmo}
+            onChange={(e) => setFormData((prev) => ({ ...prev, venmo: e.target.value }))}
+            placeholder="📲 Venmo (@handle)"
+            className="rounded-2xl"
+          />
+        </div>
+      ) : (
+        <PaidTicketForm
+          onTicketInfoChange={(ticketInfo) =>
+            setFormData((prev) => ({ ...prev, ticketInfo }))
+          }
+        />
+      )}
 
       {/* Eventbrite-Style Recurring Event Form */}
       <EventbriteStyleRecurringForm
