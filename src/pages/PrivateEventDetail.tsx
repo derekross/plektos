@@ -14,7 +14,10 @@ import { CalendarDays, Loader2, Lock, MapPin, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PosterSection } from "@/components/PosterSection";
+import { ChipInSection } from "@/components/private/ChipInSection";
+import { EventChat } from "@/components/private/EventChat";
 import { GuestRoster } from "@/components/private/GuestRoster";
+import { SignUpBoard } from "@/components/private/SignUpBoard";
 import { InviteSheet } from "@/components/private/InviteSheet";
 import { PrivacySheet } from "@/components/private/PrivacySheet";
 import { Button } from "@/components/ui/button";
@@ -152,6 +155,17 @@ export function PrivateEventDetail() {
       <PosterSection title="Who's coming 🎉">
         <GuestRoster tally={tally} viewerPubkey={user?.pubkey} />
       </PosterSection>
+
+      <ChipInSection event={event} />
+
+      <SignUpBoard communityId={community.idHex} />
+
+      {/*
+        Replaces EventComments outright for private events. The public comment
+        system publishes kind 1111 in the clear, whose `e` tag would name the
+        private rumor id.
+      */}
+      <EventChat communityId={community.idHex} />
 
       {/* RSVP dock */}
       {user && (

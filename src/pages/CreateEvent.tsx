@@ -94,6 +94,10 @@ export function CreateEvent() {
     endDate: "",
     endTime: "",
     imageUrl: "",
+    chipInAmount: "",
+    cashapp: "",
+    venmo: "",
+    lightning: "",
     categories: [] as EventCategory[],
     ticketInfo: {
       enabled: false,
@@ -236,6 +240,12 @@ export function CreateEvent() {
             image: formData.imageUrl || undefined,
             start,
             ...(hasTime ? { startTzid: formData.timezone } : {}),
+            // Contribution extension — the same tag names Armada and the
+            // Concord events app already read, so interop is free.
+            ...(formData.chipInAmount ? { amount: formData.chipInAmount } : {}),
+            ...(formData.cashapp ? { cashapp: formData.cashapp } : {}),
+            ...(formData.venmo ? { venmo: formData.venmo } : {}),
+            ...(formData.lightning ? { lightning: formData.lightning } : {}),
           },
         });
 
@@ -757,11 +767,50 @@ export function CreateEvent() {
         </div>
       )}
 
-      <PaidTicketForm
-        onTicketInfoChange={(ticketInfo) =>
-          setFormData((prev) => ({ ...prev, ticketInfo }))
-        }
-      />
+      {/*
+        Private parties get a chip-in instead of ticketing. Public zap
+        ticketing publishes a plaintext price and a NIP-57 zap request, neither
+        of which has a coordinate to point at for an encrypted event.
+      */}
+      {isPrivate ? (
+        <div className="space-y-3">
+          <Label className="text-lg font-semibold">Chip in? 💸 (optional)</Label>
+          <p className="text-sm text-muted-foreground">
+            A suggested amount and where to send it. Guests see this on the party page.
+          </p>
+          <Input
+            value={formData.chipInAmount}
+            onChange={(e) => setFormData((prev) => ({ ...prev, chipInAmount: e.target.value }))}
+            placeholder="Suggested amount in sats, e.g. 2000"
+            inputMode="numeric"
+            className="rounded-2xl"
+          />
+          <Input
+            value={formData.lightning}
+            onChange={(e) => setFormData((prev) => ({ ...prev, lightning: e.target.value }))}
+            placeholder="⚡ Lightning address (you@example.com)"
+            className="rounded-2xl"
+          />
+          <Input
+            value={formData.cashapp}
+            onChange={(e) => setFormData((prev) => ({ ...prev, cashapp: e.target.value }))}
+            placeholder="💵 Cash App ($handle)"
+            className="rounded-2xl"
+          />
+          <Input
+            value={formData.venmo}
+            onChange={(e) => setFormData((prev) => ({ ...prev, venmo: e.target.value }))}
+            placeholder="📲 Venmo (@handle)"
+            className="rounded-2xl"
+          />
+        </div>
+      ) : (
+        <PaidTicketForm
+          onTicketInfoChange={(ticketInfo) =>
+            setFormData((prev) => ({ ...prev, ticketInfo }))
+          }
+        />
+      )}
 
       {/* Eventbrite-Style Recurring Event Form */}
       <EventbriteStyleRecurringForm
