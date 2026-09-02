@@ -1,82 +1,103 @@
 /**
  * Minting a private event.
  *
- * A private Plektos event IS a Concord community with a single channel. The
- * calendar rumor inside that channel is the event; RSVPs, the sign-up board and
- * chat are further rumors in the same stream. That mapping is what makes the
- * event readable by Armada and the rest of the Concord family — verified end to
- * end before any of this was written: Plektos mints, Armada renders and RSVPs,
- * Plektos reads the RSVP back.
+ * A host has ONE Concord community — "Plektos Events" — and each party is a
+ * PRIVATE CHANNEL inside it. The calendar rumor in that channel is the event.
  *
- * Genesis publishes exactly two owner-signed control editions (metadata and the
- * `general` channel) plus the calendar rumor. The frightening parts of CORD-04
- * — delegation, roles, grants, authority citations — are all read-side and all
- * short-circuit here, because the host IS the owner: `citationOk` returns true
- * on owner identity alone, and both editions are version 1 with no prevHash, so
- * the fold anchors without a chain walk.
+ * The obvious alternative, one community per party, was built first and
+ * abandoned: Armada renders every entry in the shared key list as a community,
+ * so a host's sidebar accumulated one community per party, permanently.
+ *
+ * Isolation survives the change, and that is the part worth being careful
+ * about. A private channel's key is independent of the community root, and an
+ * invite delivers only the ONE channel it is for. `channelsView` renders a
+ * private channel from a held key even when the Control Plane has no
+ * definition for it, so we deliberately publish **no per-party channel
+ * edition** — a guest of one party therefore cannot even see that the others
+ * exist, rather than merely being unable to read them.
+ *
+ * What a guest does get from the community root: the Control Plane and any
+ * public channel. We create none, so that is an empty set today. It is still a
+ * real difference from the old mapping — one root now covers every party, and
+ * a rekey would affect all of them at once.
  */
-import { channelGroupKey, bytesToHex, type GroupKey } from "@/concord/lib/derive";
+import { bytesToHex, channelGroupKey, random32, type GroupKey } from "@/concord/lib/derive";
 import { mintCommunity } from "@/concord/lib/community";
-import {
-  buildChannelEdition,
-  buildMetadataEdition,
-  currentControlWriteGroup,
-} from "@/concord/lib/control";
+import { buildMetadataEdition, currentControlWriteGroup } from "@/concord/lib/control";
 import { buildRumor, channelBindingTags } from "@/concord/lib/stream";
 import type { NostrRumor } from "@/concord/lib/rumor";
-import type { Community } from "@/concord/lib/types";
+import type { Community, PrivateChannelKey } from "@/concord/lib/types";
 import { buildCalendarTags, type CalendarEventInput } from "./calendar";
 
-/** The channel every private event gets. Public within the community — and the
- * community has exactly one event, so every member is already a guest. This is
- * also Armada's own genesis shape, which is what makes it render there. */
-export const GENERAL_CHANNEL_NAME = "general";
-
-export interface MintedPrivateEvent {
-  community: Community;
-  channelId: Uint8Array;
-  channelIdHex: string;
-  /** The stream that carries the event, its RSVPs, board and chat. */
-  stream: GroupKey;
-  /** The control-plane write key. Only the owner holds this. */
-  controlWrite: GroupKey;
-}
+/** The host's one community. */
+export const PLEKTOS_EVENTS_NAME = "Plektos Events";
 
 /**
- * Mint the keys for a new private event. Pure and local — no signer, no
- * network. Roughly four HKDF derivations and two point multiplications.
+ * Marks the host's events community inside their key list.
+ *
+ * Rides `JoinMaterial`'s index signature, which `listFrag` preserves through
+ * its `extra` buckets — the same mechanism that keeps Armada's own unknown
+ * fields intact. Matching on the NAME instead would break the moment a user
+ * renamed it in Armada.
  */
-export function mintPrivateEvent(
-  title: string,
-  ownerPubkeyHex: string,
-  relays: string[],
-): MintedPrivateEvent {
-  const { community, generalChannelId } = mintCommunity(title, ownerPubkeyHex, relays);
+export const PLEKTOS_EVENTS_MARKER = "plektos_events";
+
+/**
+ * Mint the host's events community.
+ *
+ * `mintCommunity` also hands back a `generalChannelId`; we ignore it. A public
+ * `#general` would be readable by every guest of every party, which is exactly
+ * the leak this mapping exists to avoid.
+ */
+export function mintEventsCommunity(ownerPubkeyHex: string, relays: string[]): Community {
+  const { community } = mintCommunity(PLEKTOS_EVENTS_NAME, ownerPubkeyHex, relays);
+  return community;
+}
+
+export interface PartyChannel {
+  key: PrivateChannelKey;
+  idHex: string;
+  /** The stream carrying the event, its RSVPs, board and chat. */
+  stream: GroupKey;
+}
+
+/** Mint a private channel for one party. Pure and local — no signer, no network. */
+export function mintPartyChannel(name: string): PartyChannel {
+  const id = random32();
+  const key = random32();
+  const epoch = 0n;
   return {
-    community,
-    channelId: generalChannelId,
-    channelIdHex: bytesToHex(generalChannelId),
-    // A PUBLIC channel derives its stream from the community root, so every
-    // member reads it with the key the invite already gave them.
-    stream: channelGroupKey(community.root, generalChannelId, community.rootEpoch),
-    controlWrite: currentControlWriteGroup(community),
+    key: { id, key, epoch, name },
+    idHex: bytesToHex(id),
+    // A PRIVATE channel derives from its own independent key, NOT the
+    // community root — which is what keeps one party unreadable to another's
+    // guests even though both hold the same root.
+    stream: channelGroupKey(key, id, epoch),
   };
 }
 
-/** The two genesis control editions, unsigned. Both version 1, owner-authored. */
-export function genesisEditions(
-  minted: MintedPrivateEvent,
-  meta: { name: string; description?: string; relays: string[] },
+/** Attach a freshly minted party channel to the community it belongs to. */
+export function withPartyChannel(community: Community, party: PartyChannel): Community {
+  return { ...community, privateChannels: [...community.privateChannels, party.key] };
+}
+
+/** The community's metadata edition. Written once, when the community is minted. */
+export function eventsCommunityGenesis(
+  community: Community,
+  relays: string[],
   ownerPubkey: string,
-): { metadata: NostrRumor; channel: NostrRumor } {
-  const common = { actorPubkey: ownerPubkey, version: 1n };
+): { rumor: NostrRumor; controlWrite: GroupKey } {
   return {
-    metadata: buildMetadataEdition(minted.community.id, meta, common),
-    channel: buildChannelEdition(
-      minted.channelId,
-      { name: GENERAL_CHANNEL_NAME, private: false },
-      common,
+    rumor: buildMetadataEdition(
+      community.id,
+      {
+        name: PLEKTOS_EVENTS_NAME,
+        description: "Private parties hosted on Plektos.",
+        relays,
+      },
+      { actorPubkey: ownerPubkey, version: 1n },
     ),
+    controlWrite: currentControlWriteGroup(community),
   };
 }
 
@@ -87,19 +108,17 @@ export function genesisEditions(
  * works, and the fold keeps the newest per `(author, d)`.
  */
 export function buildEventRumor(
-  minted: MintedPrivateEvent,
+  party: PartyChannel,
   input: CalendarEventInput,
   ownerPubkey: string,
 ): NostrRumor {
   return buildRumor({
-    // 31923 when the input carries a time, 31922 for a whole-day event — the
-    // caller decides, exactly as the public path does.
     kind: input.kind,
     content: input.description ?? "",
     pubkey: ownerPubkey,
     ms: Date.now(),
     tags: [
-      ...channelBindingTags(minted.channelIdHex, minted.community.rootEpoch),
+      ...channelBindingTags(party.idHex, party.key.epoch),
       ...buildCalendarTags(input),
     ],
   });

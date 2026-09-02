@@ -27,9 +27,9 @@ const CATEGORIES = [
   { key: "other", emoji: "✨", label: "Other" },
 ];
 
-export function SignUpBoard({ communityId }: { communityId: string }) {
+export function SignUpBoard({ channelId }: { channelId: string }) {
   const { user } = useCurrentUser();
-  const { items, addItem, setClaim } = usePrivateSignUpBoard(communityId);
+  const { items, addItem, setClaim } = usePrivateSignUpBoard(channelId);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("food");
   const [busy, setBusy] = useState<string>();

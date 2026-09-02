@@ -34,7 +34,7 @@ import {
   type RsvpVote,
 } from "@/lib/private/calendar";
 import { resolvePrivateRelays } from "@/lib/private/relays";
-import { usePrivateEvent, usePrivateEventStream } from "./usePrivateEvent";
+import { usePrivateParty, usePrivateEventStream } from "./usePrivateEvent";
 
 /** How long an unconfirmed RSVP survives refetches. Wider than a chat message's
  * because the RSVP chips have no "sending…" affordance to explain a revert. */
@@ -46,11 +46,11 @@ export interface PrivateEventDetail {
   isLoading: boolean;
 }
 
-export function usePrivateEventCalendar(communityIdHex: string | undefined) {
+export function usePrivateEventCalendar(channelIdHex: string | undefined) {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
-  const { community, isHost } = usePrivateEvent(communityIdHex);
-  const { data, isLoading } = usePrivateEventStream(communityIdHex);
+  const { community, isHost } = usePrivateParty(channelIdHex);
+  const { data, isLoading } = usePrivateEventStream(channelIdHex);
   const queryClient = useQueryClient();
 
   /** The viewer's unconfirmed votes: rumorId -> { vote, expires }. */
@@ -144,7 +144,7 @@ export function usePrivateEventCalendar(communityIdHex: string | undefined) {
         signal: AbortSignal.timeout(15_000),
         relays: resolvePrivateRelays(community.relays),
       });
-      queryClient.invalidateQueries({ queryKey: ["private-stream", community.idHex] });
+      queryClient.invalidateQueries({ queryKey: ["private-stream", channel.idHex] });
     },
     [user, community, nostr, queryClient, data],
   );

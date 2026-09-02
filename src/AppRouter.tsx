@@ -48,7 +48,7 @@ export default function AppRouter() {
           share/comment/zap paths structurally unreachable for it.
           Both are static-prefixed, so they outrank the bare-NIP-19 catch-all.
         */}
-        <Route path="/private/:communityId" element={<PrivateEventDetail />} />
+        <Route path="/private/:channelId" element={<PrivateEventDetail />} />
         <Route path="/invite/:naddr" element={<InviteLanding />} />
         {/* Support bare NIP-19 identifiers (naddr1..., nevent1..., note1...) as top-level URLs */}
         <Route path="/:eventId" element={<EventDetail />} />

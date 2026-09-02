@@ -14,7 +14,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { KIND_DELETE, KIND_MESSAGE, KIND_SEAL_ENCRYPTED } from "@/concord/lib/kinds";
 import { buildRumor, channelBindingTags, sealRumor, wrapSeal } from "@/concord/lib/stream";
 import { resolvePrivateRelays } from "@/lib/private/relays";
-import { usePrivateEvent, usePrivateEventStream } from "./usePrivateEvent";
+import { usePrivateParty, usePrivateEventStream } from "./usePrivateEvent";
 
 export interface PrivateMessage {
   id: string;
@@ -23,11 +23,11 @@ export interface PrivateMessage {
   ms: number;
 }
 
-export function usePrivateEventChat(communityIdHex: string | undefined) {
+export function usePrivateEventChat(channelIdHex: string | undefined) {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
-  const { community } = usePrivateEvent(communityIdHex);
-  const { data, isLoading } = usePrivateEventStream(communityIdHex);
+  const { community } = usePrivateParty(channelIdHex);
+  const { data, isLoading } = usePrivateEventStream(channelIdHex);
   const queryClient = useQueryClient();
 
   const messages = useMemo<PrivateMessage[]>(() => {
@@ -79,7 +79,7 @@ export function usePrivateEventChat(communityIdHex: string | undefined) {
         signal: AbortSignal.timeout(15_000),
         relays: resolvePrivateRelays(community.relays),
       });
-      queryClient.invalidateQueries({ queryKey: ["private-stream", community.idHex] });
+      queryClient.invalidateQueries({ queryKey: ["private-stream", channel.idHex] });
     },
     [user, community, data, nostr, queryClient],
   );

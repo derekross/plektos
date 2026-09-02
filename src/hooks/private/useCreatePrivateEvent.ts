@@ -1,27 +1,22 @@
 /**
  * Create a private event.
  *
- * The ordering here is a correctness constraint, not a UX preference.
+ * The ordering is a correctness constraint, not a UX preference. Naively this
+ * costs many signer round-trips, and the obvious order is wrong: publish the
+ * event first and a failed key write leaves a host who has published a party
+ * whose channel key they no longer hold — unrecoverable.
  *
- * Naively this costs eight signer round-trips, which on a bunker is ten to
- * fifteen seconds of spinner. Worse, the obvious order is wrong: publish the
- * event first and a failed key write leaves a host who has published an event
- * whose keys they no longer hold — unrecoverable. So:
- *
- *   BLOCKING (3 signer calls)
- *     1. encrypt the key list      keys are persisted FIRST
- *     2. sign the key list
- *     3. sign the calendar seal    the event now exists
+ *   BLOCKING
+ *     1. encrypt + sign the key list   the channel key is persisted FIRST
+ *     2. sign the calendar seal        the event now exists
  *     -> navigate
  *
- *   BACKGROUND (2 signer calls, retryable)
- *     4. metadata edition (vsk 0)
- *     5. channel edition  (vsk 2)
+ *   BACKGROUND (first party only)
+ *     3. the community metadata edition
  *
- * The background half is deliberately not blocking: a private channel whose key
- * rides in the join material renders in Armada even with an empty control
- * plane, so a failed edition degrades the event (no name/description/relay set
- * in other clients) rather than breaking it.
+ * No per-party channel edition is published, deliberately: `channelsView`
+ * renders a private channel from a held key without one, so omitting it means a
+ * guest of one party cannot see that the others exist.
  */
 import { useMutation } from "@tanstack/react-query";
 import { useNostr } from "@nostrify/react";
@@ -33,32 +28,36 @@ import { KIND_SEAL_ENCRYPTED } from "@/concord/lib/kinds";
 import { sealRumor, wrapSeal } from "@/concord/lib/stream";
 import type { CalendarEventInput } from "@/lib/private/calendar";
 import {
+  PLEKTOS_EVENTS_MARKER,
   buildEventRumor,
-  genesisEditions,
-  mintPrivateEvent,
-  type MintedPrivateEvent,
+  eventsCommunityGenesis,
+  mintEventsCommunity,
+  mintPartyChannel,
+  withPartyChannel,
 } from "@/lib/private/create";
 import { PRIVATE_EVENT_RELAYS } from "@/lib/private/relays";
+import { usePrivateEvents } from "./usePrivateEvent";
 import { usePublishPrivateEventKeys } from "./usePrivateEventKeys";
 
 export interface CreatePrivateEventInput {
+  /** The party. Its description rides in the calendar rumor's content. */
   calendar: CalendarEventInput;
-  description?: string;
 }
 
 export interface CreatedPrivateEvent {
+  /** A party is addressed by its CHANNEL, not its community. */
+  channelIdHex: string;
   communityIdHex: string;
-  minted: MintedPrivateEvent;
-  rumorId: string;
 }
 
 export function useCreatePrivateEvent() {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
+  const { eventsHome } = usePrivateEvents();
   const publishKeys = usePublishPrivateEventKeys();
 
   return useMutation<CreatedPrivateEvent, Error, CreatePrivateEventInput>({
-    mutationFn: async ({ calendar, description }) => {
+    mutationFn: async ({ calendar }) => {
       if (!user?.signer.nip44) {
         throw new Error(
           "Your signer can't encrypt yet (NIP-44 required). Try a different login, " +
@@ -67,49 +66,51 @@ export function useCreatePrivateEvent() {
       }
 
       const relays = [...PRIVATE_EVENT_RELAYS];
-      const minted = mintPrivateEvent(calendar.title, user.pubkey, relays);
+      const existing = eventsHome;
+      const isFirst = !existing;
+      const base = existing ?? mintEventsCommunity(user.pubkey, relays);
 
-      // 1-2. Keys first. If this fails we have published nothing.
-      await publishKeys.mutateAsync((prev) =>
-        addToList(prev, {
-          community_id: minted.community.idHex,
-          seed: toJoinMaterial(minted.community),
-          current: toJoinMaterial(minted.community),
+      const party = mintPartyChannel(calendar.title);
+      const community = withPartyChannel(base, party);
+
+      // 1. Keys first. If this fails we have published nothing.
+      await publishKeys.mutateAsync((prev) => {
+        const jm = toJoinMaterial(community);
+        // The marker rides the index signature and survives the fragment
+        // round trip, so the host's events community stays findable even
+        // after Armada renames it.
+        (jm as { [k: string]: unknown })[PLEKTOS_EVENTS_MARKER] = true;
+        return addToList(prev, {
+          community_id: community.idHex,
+          seed: jm,
+          current: jm,
           added_at: Date.now(),
-        }),
-      );
+        });
+      });
 
-      // 3. The event itself.
-      const rumor = buildEventRumor(minted, calendar, user.pubkey);
-      const seal = await sealRumor(rumor, KIND_SEAL_ENCRYPTED, minted.stream, user.signer);
-      await nostr.event(wrapSeal(seal, minted.stream), {
+      // 2. The event itself, into its own private channel.
+      const rumor = buildEventRumor(party, calendar, user.pubkey);
+      const seal = await sealRumor(rumor, KIND_SEAL_ENCRYPTED, party.stream, user.signer);
+      await nostr.event(wrapSeal(seal, party.stream), {
         signal: AbortSignal.timeout(15_000),
         relays,
       });
 
-      // 4-5. Control plane, off the critical path. A failure here degrades the
-      // event in other clients; it does not break it.
-      void (async () => {
-        try {
-          const editions = genesisEditions(
-            minted,
-            { name: calendar.title, description, relays },
-            user.pubkey,
-          );
-          for (const rumorToSeal of [editions.metadata, editions.channel]) {
-            const wrap = await sealEdition(rumorToSeal, minted.controlWrite, user.signer);
+      // 3. Community metadata, once, off the critical path. A failure here
+      // leaves the community unnamed in other clients; it does not break it.
+      if (isFirst) {
+        void (async () => {
+          try {
+            const genesis = eventsCommunityGenesis(community, relays, user.pubkey);
+            const wrap = await sealEdition(genesis.rumor, genesis.controlWrite, user.signer);
             await nostr.event(wrap, { signal: AbortSignal.timeout(15_000), relays });
+          } catch (err) {
+            console.error("private events: community genesis failed", err);
           }
-        } catch (err) {
-          console.error("private event: control-plane genesis failed", err);
-        }
-      })();
+        })();
+      }
 
-      return {
-        communityIdHex: minted.community.idHex,
-        minted,
-        rumorId: rumor.id,
-      };
+      return { channelIdHex: party.idHex, communityIdHex: community.idHex };
     },
   });
 }

@@ -20,12 +20,16 @@ export function useMintInvite() {
   return useMutation({
     mutationFn: async ({
       community,
+      channelIdHex,
       description,
     }: {
       community: Community;
+      channelIdHex: string;
       description?: string;
     }) => {
-      const { event, url } = mintInvite(community, window.location.origin, { description });
+      const { event, url } = mintInvite(community, channelIdHex, window.location.origin, {
+        description,
+      });
       // The bundle is signed by the single-use link keypair, so this costs the
       // host zero signer round-trips.
       await nostr.event(event, {
@@ -87,7 +91,8 @@ export function useRedeemInvite() {
           added_at: Date.now(),
         }),
       );
-      return jm.community_id;
+      // A party is addressed by its channel, and the bundle carries exactly one.
+      return jm.channels[0]?.id;
     },
   });
 }

@@ -27,9 +27,12 @@ import type { JoinMaterial } from "@/concord/lib/communityList";
 /** Build the 33301 bundle event plus the shareable URL for a private event. */
 export function mintInvite(
   community: Community,
+  channelIdHex: string,
   origin: string,
   opts: { description?: string; expiresAt?: number } = {},
 ) {
+  const channel = community.privateChannels.find((c) => bytesToHex(c.id) === channelIdHex);
+  if (!channel) throw new Error("That party's channel key isn't in this community.");
   const { sk, pk } = mintLinkSigner();
   const token = mintToken();
 
@@ -43,11 +46,19 @@ export function mintInvite(
     // community; omitting it for a community that HAS one makes every joiner
     // fold at the wrong address and see no channels at all.
     control_pk: community.controlPk,
-    // `general` is public, so the community root already covers it — a joiner
-    // needs no per-channel key.
-    channels: [],
+    // EXACTLY the one party being shared. The host's community may hold many
+    // private channels; delivering more than this one would hand a guest of
+    // this party the keys to every other party too.
+    channels: [
+      {
+        id: bytesToHex(channel.id),
+        key: bytesToHex(channel.key),
+        epoch: Number(channel.epoch),
+        name: channel.name,
+      },
+    ],
     relays: [...community.relays],
-    name: community.name,
+    name: channel.name,
     ...(opts.description ? { description: opts.description } : {}),
     ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
   };

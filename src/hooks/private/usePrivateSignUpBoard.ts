@@ -27,17 +27,17 @@ import {
   type SignUpItem,
 } from "@/lib/private/signUpModel";
 import { resolvePrivateRelays } from "@/lib/private/relays";
-import { usePrivateEvent, usePrivateEventStream } from "./usePrivateEvent";
+import { usePrivateParty, usePrivateEventStream } from "./usePrivateEvent";
 
 function editTarget(ev: OpenedEvent): string | undefined {
   return ev.tags.find((t) => t[0] === "e")?.[1];
 }
 
-export function usePrivateSignUpBoard(communityIdHex: string | undefined) {
+export function usePrivateSignUpBoard(channelIdHex: string | undefined) {
   const { nostr } = useNostr();
   const { user } = useCurrentUser();
-  const { community } = usePrivateEvent(communityIdHex);
-  const { data, isLoading } = usePrivateEventStream(communityIdHex);
+  const { community } = usePrivateParty(channelIdHex);
+  const { data, isLoading } = usePrivateEventStream(channelIdHex);
   const queryClient = useQueryClient();
 
   const items = useMemo<SignUpItem[]>(() => {
@@ -98,7 +98,7 @@ export function usePrivateSignUpBoard(communityIdHex: string | undefined) {
         signal: AbortSignal.timeout(15_000),
         relays: resolvePrivateRelays(community.relays),
       });
-      queryClient.invalidateQueries({ queryKey: ["private-stream", community.idHex] });
+      queryClient.invalidateQueries({ queryKey: ["private-stream", channel.idHex] });
     },
     [user, community, data, nostr, queryClient],
   );

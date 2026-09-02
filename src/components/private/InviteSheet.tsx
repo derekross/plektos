@@ -22,10 +22,13 @@ import { useMintInvite } from "@/hooks/private/useInvite";
 
 export function InviteSheet({
   community,
+  channelIdHex,
   open,
   onOpenChange,
 }: {
   community: Community;
+  /** The one party being shared — an invite must never carry the others. */
+  channelIdHex: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -37,12 +40,12 @@ export function InviteSheet({
   useEffect(() => {
     if (!open || url || mint.isPending) return;
     mint
-      .mutateAsync({ community })
+      .mutateAsync({ community, channelIdHex })
       .then(setUrl)
       .catch((err) =>
         toast.error(err instanceof Error ? err.message : "Couldn't create an invite link"),
       );
-  }, [open, url, mint, community]);
+  }, [open, url, mint, community, channelIdHex]);
 
   useEffect(() => {
     if (!url) return;
@@ -61,7 +64,7 @@ export function InviteSheet({
     if (!url) return;
     if (navigator.share) {
       try {
-        await navigator.share({ title: community.name, url });
+        await navigator.share({ url });
         return;
       } catch {
         // User dismissed the sheet — fall through to clipboard.

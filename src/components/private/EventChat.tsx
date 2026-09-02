@@ -19,9 +19,9 @@ import { useAuthorsMetadata } from "@/hooks/useAuthorsMetadata";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePrivateEventChat } from "@/hooks/private/usePrivateEventChat";
 
-export function EventChat({ communityId }: { communityId: string }) {
+export function EventChat({ channelId }: { channelId: string }) {
   const { user } = useCurrentUser();
-  const { messages, send } = usePrivateEventChat(communityId);
+  const { messages, send } = usePrivateEventChat(channelId);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
 

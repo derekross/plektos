@@ -93,3 +93,46 @@ describe("key list round trip", () => {
     expect(liveEntries(round).map((e) => e.community_id)).toEqual([keep]);
   });
 });
+
+describe("adding a second party to the same community", () => {
+  it("keeps the first party's channel key", () => {
+    // The failure this guards: every party is a private channel in ONE
+    // community, so the second create merges an entry for a community that is
+    // already in the list. If the merge replaced channels instead of unioning
+    // them, throwing a second party would silently take the first one dark.
+    const id = "1".repeat(64);
+    const base = {
+      community_id: id,
+      owner: "a".repeat(64),
+      owner_salt: "b".repeat(64),
+      community_root: "c".repeat(64),
+      root_epoch: 0,
+      relays: ["wss://relay.example"],
+      name: "Plektos Events",
+    };
+    const chan = (n: string, name: string) => ({
+      id: n.repeat(64),
+      key: n.repeat(64),
+      epoch: 0,
+      name,
+    });
+
+    let list = addToList(EMPTY_COMMUNITY_LIST, {
+      community_id: id,
+      seed: { ...base, channels: [chan("1", "First party")] },
+      current: { ...base, channels: [chan("1", "First party")] },
+      added_at: 1,
+    });
+
+    list = addToList(list, {
+      community_id: id,
+      seed: { ...base, channels: [chan("1", "First party"), chan("2", "Second party")] },
+      current: { ...base, channels: [chan("1", "First party"), chan("2", "Second party")] },
+      added_at: 2,
+    });
+
+    const entry = liveEntries(defragment(fragment(list))).find((e) => e.community_id === id);
+    const names = (entry!.current.channels ?? []).map((c) => c.name).sort();
+    expect(names).toEqual(["First party", "Second party"]);
+  });
+});

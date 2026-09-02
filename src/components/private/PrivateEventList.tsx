@@ -10,10 +10,10 @@ import { CalendarDays, Lock } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePrivateEvents } from "@/hooks/private/usePrivateEvent";
+import { usePrivateParties } from "@/hooks/private/usePrivateEvent";
 
 export function PrivateEventList() {
-  const { communities, isLoading } = usePrivateEvents();
+  const { parties, isLoading } = usePrivateParties();
 
   if (isLoading) {
     return (
@@ -24,7 +24,7 @@ export function PrivateEventList() {
     );
   }
 
-  if (communities.length === 0) {
+  if (parties.length === 0) {
     return (
       <Card className="p-8 text-center">
         <CardContent className="pt-6">
@@ -40,16 +40,16 @@ export function PrivateEventList() {
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {communities.map((c) => (
+      {parties.map((p) => (
         <Link
-          key={c.idHex}
-          to={`/private/${c.idHex}`}
+          key={p.channelIdHex}
+          to={`/private/${p.channelIdHex}`}
           className="glass rounded-2xl p-4 transition-transform hover:scale-[1.01]"
         >
           <p className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
             <Lock className="size-3" aria-hidden /> Private
           </p>
-          <h3 className="font-display text-lg font-semibold leading-tight">{c.name}</h3>
+          <h3 className="font-display text-lg font-semibold leading-tight">{p.name}</h3>
           <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
             <CalendarDays className="size-3.5" aria-hidden />
             Open to see the details

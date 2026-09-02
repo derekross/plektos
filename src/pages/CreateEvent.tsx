@@ -230,7 +230,6 @@ export function CreateEvent() {
           : formData.startDate;
 
         const created = await createPrivate.mutateAsync({
-          description: formData.description,
           calendar: {
             identifier: randomCalendarId(),
             kind: eventKind,
@@ -250,7 +249,7 @@ export function CreateEvent() {
         });
 
         toast.success("Private party created 🔒 Now invite your guests.");
-        navigate(`/private/${created.communityIdHex}`);
+        navigate(`/private/${created.channelIdHex}`);
         setIsSubmitting(false);
         return;
       }

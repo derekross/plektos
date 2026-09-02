@@ -22,14 +22,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { parseInviteRoute } from "@/concord/lib/invite";
 import { useInviteBundle, useRedeemInvite } from "@/hooks/private/useInvite";
-import { usePrivateEvents } from "@/hooks/private/usePrivateEvent";
+import { usePrivateParties } from "@/hooks/private/usePrivateEvent";
 
 export function InviteLanding() {
   const { naddr } = useParams<{ naddr: string }>();
   const navigate = useNavigate();
   const { user } = useCurrentUser();
   const redeem = useRedeemInvite();
-  const { communities } = usePrivateEvents();
+  const { parties } = usePrivateParties();
 
   // Captured once — a remote-signer login will otherwise eat it.
   const [fragment] = useState(() => window.location.hash.replace(/^#/, ""));
@@ -45,18 +45,19 @@ export function InviteLanding() {
 
   const { data: bundle, isLoading, error } = useInviteBundle(link);
 
-  const already = bundle && communities.some((c) => c.idHex === bundle.community_id);
+  const channelId = bundle?.channels[0]?.id;
+  const already = Boolean(channelId && parties.some((p) => p.channelIdHex === channelId));
 
   useEffect(() => {
-    if (already && bundle) navigate(`/private/${bundle.community_id}`, { replace: true });
-  }, [already, bundle, navigate]);
+    if (already && channelId) navigate(`/private/${channelId}`, { replace: true });
+  }, [already, channelId, navigate]);
 
   const accept = async () => {
     if (!bundle) return;
     try {
-      const cid = await redeem.mutateAsync(bundle);
+      const joined = await redeem.mutateAsync(bundle);
       toast.success("You're on the list ✨");
-      navigate(`/private/${cid}`, { replace: true });
+      if (joined) navigate(`/private/${joined}`, { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't accept the invite");
     }

@@ -33,10 +33,10 @@ const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
 ];
 
 export function PrivateEventDetail() {
-  const { communityId } = useParams<{ communityId: string }>();
+  const { channelId } = useParams<{ channelId: string }>();
   const { user } = useCurrentUser();
   const { event, tally, isLoading, setRsvp, isHost, community } =
-    usePrivateEventCalendar(communityId);
+    usePrivateEventCalendar(channelId);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [busy, setBusy] = useState<RsvpStatus>();
@@ -158,14 +158,14 @@ export function PrivateEventDetail() {
 
       <ChipInSection event={event} />
 
-      <SignUpBoard communityId={community.idHex} />
+      <SignUpBoard channelId={channelId!} />
 
       {/*
         Replaces EventComments outright for private events. The public comment
         system publishes kind 1111 in the clear, whose `e` tag would name the
         private rumor id.
       */}
-      <EventChat communityId={community.idHex} />
+      <EventChat channelId={channelId!} />
 
       {/* RSVP dock */}
       {user && (
@@ -197,7 +197,12 @@ export function PrivateEventDetail() {
         </div>
       )}
 
-      <InviteSheet community={community} open={inviteOpen} onOpenChange={setInviteOpen} />
+      <InviteSheet
+        community={community}
+        channelIdHex={channelId!}
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+      />
       <PrivacySheet
         community={community}
         tally={tally}

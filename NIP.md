@@ -58,15 +58,33 @@ the things another Concord client needs to know to interoperate.
 ### The mapping
 
 ```
-one private event  ≡  one Concord community
-  owner            the host
-  community_id     sha256("concord/community" ‖ owner_xonly ‖ owner_salt)
-  root_epoch       0
-  one channel      named "general", PUBLIC within the community, epoch 0
+one HOST          ≡  one Concord community, "Plektos Events"
+  owner              the host
+  community_id       sha256("concord/community" ‖ owner_xonly ‖ owner_salt)
+  root_epoch         0
+one PRIVATE EVENT ≡  one PRIVATE channel in it
+  channel_id         random 32 bytes
+  channel_key        random 32 bytes, independent of community_root
+  epoch              0
 ```
 
-The community has exactly one event, so every member is already a guest; a public
-channel is therefore the right semantics, and it is also Armada's own genesis shape.
+One community per *event* was built first and abandoned: a Concord client renders
+every entry in the shared key list as a community, so a host's sidebar accumulated
+one community per party, permanently.
+
+Isolation is preserved by the channel being PRIVATE. Its key is independent of the
+community root, and an invite bundle carries **exactly the one channel it is for**.
+Plektos deliberately publishes **no channel edition (`vsk 2`) per party**: a private
+channel renders from a held key alone, so omitting the edition means a guest of one
+party cannot see that the others exist, rather than merely being unable to read them.
+
+What the community root does grant a guest: the Control Plane and any PUBLIC channel.
+Plektos creates none. The honest cost of this mapping is that one root now covers
+every one of a host's parties, so a rekey would affect all of them at once.
+
+The host's community is marked in their key list with `plektos_events: true` on the
+join material, which rides the index signature and survives the fragment round trip.
+Matching on the community NAME instead would break as soon as a user renamed it.
 
 Inside that channel's stream, as rumors:
 
@@ -105,8 +123,10 @@ short-circuits):
 
 | `vsk` | entity | when |
 | --- | --- | --- |
-| `0` | community metadata (name, description, relays) | genesis |
-| `2` | the `general` channel | genesis |
+| `0` | community metadata (name, description, relays) | once, when the host's community is minted |
+
+No `vsk 2` channel edition is ever written — see above; that omission is what keeps
+one party invisible to another party's guests.
 
 Editions are sealed with `KIND_SEAL_PLAINTEXT` (20014), not the encrypted seal — an
 encrypted seal could not survive a compaction re-wrap.
