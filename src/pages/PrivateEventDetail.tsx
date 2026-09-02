@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePrivateEventCalendar } from "@/hooks/private/usePrivateEventCalendar";
+import { usePrivateEventLive } from "@/hooks/private/usePrivateEventLive";
 import { formatCalendarEventWhen, type RsvpStatus } from "@/lib/private/calendar";
 
 const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
@@ -37,6 +38,10 @@ export function PrivateEventDetail() {
   const { user } = useCurrentUser();
   const { event, tally, isLoading, setRsvp, isHost, community } =
     usePrivateEventCalendar(channelId);
+  // One subscription for the whole page: the roster, board and thread all read
+  // the same stream cache, so they update together.
+  usePrivateEventLive(channelId);
+
   const [inviteOpen, setInviteOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [busy, setBusy] = useState<RsvpStatus>();
