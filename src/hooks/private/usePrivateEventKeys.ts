@@ -23,6 +23,7 @@ import { KIND_COMMUNITY_LIST_FRAG } from "@/concord/lib/kinds";
 import {
   defragment,
   fragment,
+  emptyFragList,
   parseFragList,
   serializeFragList,
   type FragList,
@@ -32,6 +33,14 @@ import { PRIVATE_EVENT_RELAYS } from "@/lib/private/relays";
 
 export interface PrivateKeysState {
   list: CommunityList;
+  /**
+   * Fragment indices that exist on relays right now. A write that packs into
+   * FEWER fragments than it read must explicitly empty the leftovers: they are
+   * addressable events that stay put, and `defragment` unions whatever it
+   * finds, so a fossil at a high index silently resurrects entries the user
+   * removed.
+   */
+  fragIndices: number[];
   /**
    * True when fragments exist but could not be decrypted. NEVER publish in
    * this state — see guard (1) above.
@@ -76,7 +85,9 @@ export async function fetchPrivateEventKeys(
     [{ kinds: [KIND_COMMUNITY_LIST_FRAG], authors: [user.pubkey], limit: 100 }],
     { signal, relays: [...PRIVATE_EVENT_RELAYS] },
   );
-  if (events.length === 0) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: false };
+  if (events.length === 0) {
+    return { list: EMPTY_COMMUNITY_LIST, decryptFailed: false, fragIndices: [] };
+  }
 
   // Newest event per `d` (fragment index) wins — these are addressable.
   const newest = new Map<string, (typeof events)[number]>();
@@ -98,8 +109,14 @@ export async function fetchPrivateEventKeys(
 
   // Fragments present but none opened: a decrypt problem, not an empty list.
   // Surfaced so the write path refuses rather than overwriting.
-  if (frags.length === 0) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: anyFailed };
-  return { list: defragment(frags), decryptFailed: anyFailed };
+  const fragIndices = [...newest.keys()]
+    .map((d) => Number(d))
+    .filter((n) => Number.isInteger(n) && n >= 0);
+
+  if (frags.length === 0) {
+    return { list: EMPTY_COMMUNITY_LIST, decryptFailed: anyFailed, fragIndices };
+  }
+  return { list: defragment(frags), decryptFailed: anyFailed, fragIndices };
 }
 
 export function usePrivateEventKeys() {
@@ -109,7 +126,9 @@ export function usePrivateEventKeys() {
   return useQuery<PrivateKeysState>({
     queryKey: keysQueryKey(user?.pubkey ?? ""),
     queryFn: async (c) => {
-      if (!user?.signer.nip44) return { list: EMPTY_COMMUNITY_LIST, decryptFailed: false };
+      if (!user?.signer.nip44) {
+        return { list: EMPTY_COMMUNITY_LIST, decryptFailed: false, fragIndices: [] };
+      }
       return fetchPrivateEventKeys(
         nostr as unknown as Querier,
         { pubkey: user.pubkey, nip44: user.signer.nip44 },
@@ -163,10 +182,10 @@ export function usePublishPrivateEventKeys() {
       const next = reduce(fresh.list);
       const frags = fragment(next);
 
-      for (const [index, frag] of frags.entries()) {
+      const publishFrag = async (frag: FragList, index: number) => {
         const event = await user.signer.signEvent({
           kind: KIND_COMMUNITY_LIST_FRAG,
-          content: await user.signer.nip44.encrypt(user.pubkey, serializeFragList(frag)),
+          content: await nip44.encrypt(user.pubkey, serializeFragList(frag)),
           tags: [["d", String(index)]],
           created_at: Math.floor(Date.now() / 1000),
         });
@@ -174,7 +193,17 @@ export function usePublishPrivateEventKeys() {
           signal: AbortSignal.timeout(10_000),
           relays: [...PRIVATE_EVENT_RELAYS],
         });
+      };
+
+      for (const [index, frag] of frags.entries()) await publishFrag(frag, index);
+
+      // Retire any fragment index that existed before but is no longer used.
+      // These are addressable events: leaving one behind means `defragment`
+      // keeps unioning a stale copy, resurrecting entries the user removed.
+      for (const stale of fresh.fragIndices.filter((i) => i >= frags.length)) {
+        await publishFrag(emptyFragList(frags.length), stale);
       }
+
       return next;
     },
     onSuccess: () => {
