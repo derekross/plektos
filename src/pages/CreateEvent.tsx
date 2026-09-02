@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { PrivacySelector } from "@/components/private/PrivacySelector";
+import { useCreatePrivateEvent } from "@/hooks/private/useCreatePrivateEvent";
+import { randomCalendarId } from "@/lib/private/calendar";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useAuthor } from "@/hooks/useAuthor";
 import { useNostrPublish } from "@/hooks/useNostrPublish";
@@ -69,6 +72,8 @@ export function CreateEvent() {
   const { mutate: createEvent } = useNostrPublish();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<"vibe" | "details">("vibe");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const createPrivate = useCreatePrivateEvent();
   const [eventTheme, setEventTheme] = useState<ThemeConfig | null>(null);
   const [titleFontFamily, setTitleFontFamily] = useState<string | null>(null);
   const [effect, setEffect] = useState<EventEffect | null>(null);
@@ -195,6 +200,50 @@ export function CreateEvent() {
       // Determine if this is a time-based event
       const hasTime = formData.startTime || formData.endTime;
       const eventKind = hasTime ? 31923 : 31922;
+
+      // ── Private party ──────────────────────────────────────────────────
+      // A private event is a Concord community, not a NIP-52 event on relays,
+      // so it takes its own path entirely: nothing below this branch is
+      // reachable for it, which is what keeps the plaintext publish, the
+      // optimistic public-feed cache patch and the `client` tag away from it.
+      //
+      // Recurrence is refused rather than silently ignored: each occurrence
+      // would mint its own community and its own key-list entry, and a weekly
+      // series would fill the list in months.
+      if (isPrivate) {
+        if (formData.eventbriteRecurringConfig.enabled) {
+          toast.error("Recurring private parties aren't supported yet — pick a single date.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        const start = hasTime
+          ? createTimestampInTimezone(
+              formData.startDate,
+              formData.startTime || "00:00",
+              formData.timezone,
+            ).toString()
+          : formData.startDate;
+
+        const created = await createPrivate.mutateAsync({
+          description: formData.description,
+          calendar: {
+            identifier: randomCalendarId(),
+            kind: eventKind,
+            title: formData.title,
+            description: formData.description,
+            location: formData.location || undefined,
+            image: formData.imageUrl || undefined,
+            start,
+            ...(hasTime ? { startTzid: formData.timezone } : {}),
+          },
+        });
+
+        toast.success("Private party created 🔒 Now invite your guests.");
+        navigate(`/private/${created.communityIdHex}`);
+        setIsSubmitting(false);
+        return;
+      }
 
       // Generate recurring event dates if enabled
       let eventDates;
@@ -438,6 +487,8 @@ export function CreateEvent() {
           required
         />
       </div>
+
+      <PrivacySelector isPrivate={isPrivate} onChange={setIsPrivate} />
 
       {/* The hero: a live poster that restyles as choices land */}
       <PosterPreview
