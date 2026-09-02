@@ -16,18 +16,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNostr } from "@nostrify/react";
 
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import {
-  KIND_CALENDAR_DATE,
-  KIND_CALENDAR_RSVP,
-  KIND_CALENDAR_TIME,
-  KIND_SEAL_ENCRYPTED,
-} from "@/concord/lib/kinds";
+import { KIND_CALENDAR_RSVP, KIND_SEAL_ENCRYPTED } from "@/concord/lib/kinds";
 import { buildRumor, channelBindingTags, sealRumor, wrapSeal } from "@/concord/lib/stream";
 import {
   foldCalendarRumors,
-  parseCalendarRumor,
-  parseRsvpRumor,
   tallyRsvps,
+  votesByEvent as votes,
   type CalendarEvent,
   type RsvpStatus,
   type RsvpTally,
@@ -61,32 +55,7 @@ export function usePrivateEventCalendar(channelIdHex: string | undefined) {
     const events = foldCalendarRumors(opened);
     const event = events[0];
 
-    // Rumor id -> coordinate, and coordinate -> the rumor id that currently
-    // holds it. Votes aimed at a superseded edit move forward.
-    const coordByRumorId = new Map<string, string>();
-    for (const ev of opened) {
-      if (ev.kind !== KIND_CALENDAR_DATE && ev.kind !== KIND_CALENDAR_TIME) continue;
-      const parsed = parseCalendarRumor(ev);
-      if (parsed) {
-        coordByRumorId.set(parsed.rumorId, `${parsed.kind}:${parsed.author}:${parsed.identifier}`);
-      }
-    }
-    const currentByCoord = new Map<string, string>();
-    for (const e of events) {
-      currentByCoord.set(`${e.kind}:${e.author}:${e.identifier}`, e.rumorId);
-    }
-
-    const votesByEvent = new Map<string, RsvpVote[]>();
-    for (const ev of opened) {
-      if (ev.kind !== KIND_CALENDAR_RSVP) continue;
-      const parsed = parseRsvpRumor(ev);
-      if (!parsed) continue;
-      const coord = coordByRumorId.get(parsed.target);
-      const target = coord ? (currentByCoord.get(coord) ?? parsed.target) : parsed.target;
-      const list = votesByEvent.get(target) ?? [];
-      list.push(parsed.vote);
-      votesByEvent.set(target, list);
-    }
+    const votesByEvent = votes(opened, events);
 
     // Re-apply the viewer's unconfirmed votes, dropping any that a relay copy
     // has now confirmed.

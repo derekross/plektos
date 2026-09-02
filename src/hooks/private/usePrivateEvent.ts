@@ -19,6 +19,7 @@ import { KIND_WRAP } from "@/concord/lib/kinds";
 import type { Channel, Community } from "@/concord/lib/types";
 import type { OpenedEvent } from "@/concord/lib/stream";
 import { openEventWraps } from "@/lib/private/stream";
+import { filterDeleted } from "@/lib/private/deletes";
 import { resolvePrivateRelays } from "@/lib/private/relays";
 import { PLEKTOS_EVENTS_MARKER } from "@/lib/private/create";
 import { usePrivateEventKeys } from "./usePrivateEventKeys";
@@ -153,7 +154,9 @@ export function usePrivateEventStream(channelIdHex: string | undefined) {
         { signal, relays },
       );
 
-      return { opened: openEventWraps(wraps, streams), channel };
+      // Deletes are applied here, once, so the calendar, roster, board and
+      // thread all inherit the same author-checked rule.
+      return { opened: filterDeleted(openEventWraps(wraps, streams)), channel };
     },
     enabled: Boolean(community && channelIdHex),
     staleTime: 15_000,

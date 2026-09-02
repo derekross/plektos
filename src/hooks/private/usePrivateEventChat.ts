@@ -11,7 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNostr } from "@nostrify/react";
 
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { KIND_DELETE, KIND_MESSAGE, KIND_SEAL_ENCRYPTED } from "@/concord/lib/kinds";
+import { KIND_MESSAGE, KIND_SEAL_ENCRYPTED } from "@/concord/lib/kinds";
 import { buildRumor, channelBindingTags, sealRumor, wrapSeal } from "@/concord/lib/stream";
 import { resolvePrivateRelays } from "@/lib/private/relays";
 import { usePrivateParty, usePrivateEventStream } from "./usePrivateEvent";
@@ -33,23 +33,9 @@ export function usePrivateEventChat(channelIdHex: string | undefined) {
   const messages = useMemo<PrivateMessage[]>(() => {
     const opened = data?.opened ?? [];
 
-    // A kind-5 delete is honoured only from the message's own author. Any
-    // keyholder can publish a delete into a shared stream, so trusting them
-    // all would let one guest erase the whole thread.
-    const deleted = new Set<string>();
-    const authorOf = new Map<string, string>();
-    for (const ev of opened) {
-      if (ev.kind === KIND_MESSAGE) authorOf.set(ev.rumorId, ev.author);
-    }
-    for (const ev of opened) {
-      if (ev.kind !== KIND_DELETE) continue;
-      for (const tag of ev.tags) {
-        if (tag[0] === "e" && authorOf.get(tag[1]) === ev.author) deleted.add(tag[1]);
-      }
-    }
-
+    // Deletes are already applied centrally by usePrivateEventStream.
     return opened
-      .filter((ev) => ev.kind === KIND_MESSAGE && !deleted.has(ev.rumorId))
+      .filter((ev) => ev.kind === KIND_MESSAGE)
       .map((ev) => ({
         id: ev.rumorId,
         pubkey: ev.author,

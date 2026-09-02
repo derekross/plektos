@@ -12,6 +12,7 @@
 
 import {
   KIND_CALENDAR_DATE,
+  KIND_CALENDAR_RSVP,
   KIND_CALENDAR_TIME,
 } from "@/concord/lib/kinds";
 import type { OpenedEvent } from "@/concord/lib/stream";
@@ -372,4 +373,52 @@ export function formatCalendarEventWhen(event: CalendarEvent): string {
   if (!event.end) return start.toLocaleDateString(undefined, dateFmt);
   const end = new Date(`${event.end}T12:00:00`);
   return `${start.toLocaleDateString(undefined, dateFmt)} – ${end.toLocaleDateString(undefined, dateFmt)}`;
+}
+
+
+/**
+ * Group RSVP votes by the event they are FOR, following edits.
+ *
+ * Rumors have no `a` coordinate, so an RSVP `e`-tags the calendar rumor's id.
+ * Editing republishes under the same `d`, which mints a NEW rumor id — so
+ * every vote cast before the edit points at a rumor that is no longer the
+ * current holder of that coordinate, and would silently vanish from the
+ * roster.
+ *
+ * Map each calendar rumor id to its coordinate, and each coordinate to
+ * whichever rumor currently holds it, then move the votes forward.
+ *
+ * Extracted from the hook so the property can actually be tested: an edit that
+ * orphans every RSVP looks exactly like an edit that worked.
+ */
+export function votesByEvent(
+  opened: readonly OpenedEvent[],
+  folded: readonly CalendarEvent[],
+): Map<string, RsvpVote[]> {
+  const coordByRumorId = new Map<string, string>();
+  for (const ev of opened) {
+    if (ev.kind !== KIND_CALENDAR_DATE && ev.kind !== KIND_CALENDAR_TIME) continue;
+    const parsed = parseCalendarRumor(ev);
+    if (parsed) {
+      coordByRumorId.set(parsed.rumorId, `${parsed.kind}:${parsed.author}:${parsed.identifier}`);
+    }
+  }
+
+  const currentByCoord = new Map<string, string>();
+  for (const e of folded) {
+    currentByCoord.set(`${e.kind}:${e.author}:${e.identifier}`, e.rumorId);
+  }
+
+  const out = new Map<string, RsvpVote[]>();
+  for (const ev of opened) {
+    if (ev.kind !== KIND_CALENDAR_RSVP) continue;
+    const parsed = parseRsvpRumor(ev);
+    if (!parsed) continue;
+    const coord = coordByRumorId.get(parsed.target);
+    const target = coord ? (currentByCoord.get(coord) ?? parsed.target) : parsed.target;
+    const list = out.get(target) ?? [];
+    list.push(parsed.vote);
+    out.set(target, list);
+  }
+  return out;
 }

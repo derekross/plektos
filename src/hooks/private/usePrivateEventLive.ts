@@ -19,6 +19,7 @@ import type { NostrEvent } from "@nostrify/nostrify";
 
 import { KIND_WRAP } from "@/concord/lib/kinds";
 import { openEventWraps } from "@/lib/private/stream";
+import { filterDeleted } from "@/lib/private/deletes";
 import { resolvePrivateRelays } from "@/lib/private/relays";
 import { usePrivateParty, usePrivateEventStream, type PrivateStreamState } from "./usePrivateEvent";
 
@@ -79,7 +80,11 @@ export function usePrivateEventLive(channelIdHex: string | undefined) {
               if (!prev) return prev;
               const seen = new Set(prev.opened.map((o) => o.rumorId));
               const fresh = opened.filter((o) => !seen.has(o.rumorId));
-              return fresh.length === 0 ? prev : { ...prev, opened: [...prev.opened, ...fresh] };
+              if (fresh.length === 0) return prev;
+              // Re-run the delete filter over the whole set: an incoming
+              // tombstone has to remove an item already in the cache, not just
+              // append itself.
+              return { ...prev, opened: filterDeleted([...prev.opened, ...fresh]) };
             },
           );
         }

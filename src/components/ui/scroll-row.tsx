@@ -54,7 +54,7 @@ export function ScrollRow({
   };
 
   return (
-    <div className="relative">
+    <div className="relative overflow-hidden">
       <div
         ref={ref}
         onScroll={measure}
@@ -72,7 +72,11 @@ export function ScrollRow({
           e.preventDefault();
           el.scrollLeft = next;
         }}
-        className={cn("scrollbar-hide -mx-3 flex gap-2 overflow-x-auto px-3 pb-1", className)}
+        // No negative margin. The old rows used `-mx-3 px-3` so content could
+        // scroll under the page padding, but the wrapper does not clip, so
+        // scrolled-out pills were visible bleeding into the gutter. The edge
+        // fades give the same "there is more" cue without escaping the box.
+        className={cn("scrollbar-hide flex gap-2 overflow-x-auto pb-1", className)}
         {...rest}
       >
         {children}

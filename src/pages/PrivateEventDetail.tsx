@@ -9,12 +9,13 @@
  * Separate routes make those unreachable rather than merely unused.
  */
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { CalendarDays, Loader2, Lock, MapPin, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PosterSection } from "@/components/PosterSection";
 import { ChipInSection } from "@/components/private/ChipInSection";
+import { EditPrivateEvent } from "@/components/private/EditPrivateEvent";
 import { EventChat } from "@/components/private/EventChat";
 import { GuestRoster } from "@/components/private/GuestRoster";
 import { SignUpBoard } from "@/components/private/SignUpBoard";
@@ -36,6 +37,7 @@ const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
 
 export function PrivateEventDetail() {
   const { channelId } = useParams<{ channelId: string }>();
+  const navigate = useNavigate();
   const { user } = useCurrentUser();
   const { event, tally, isLoading, setRsvp, isHost, community } =
     usePrivateEventCalendar(channelId);
@@ -139,9 +141,16 @@ export function PrivateEventDetail() {
       </section>
 
       {isHost && (
-        <Button className="w-full bg-party-gradient" onClick={() => setInviteOpen(true)}>
-          <Share2 className="mr-2 size-4" aria-hidden /> Invite people
-        </Button>
+        <div className="space-y-2">
+          <Button className="w-full bg-party-gradient" onClick={() => setInviteOpen(true)}>
+            <Share2 className="mr-2 size-4" aria-hidden /> Invite people
+          </Button>
+          <EditPrivateEvent
+            channelId={channelId!}
+            event={event}
+            onDeleted={() => navigate("/tickets", { replace: true })}
+          />
+        </div>
       )}
 
       {event.description && (
