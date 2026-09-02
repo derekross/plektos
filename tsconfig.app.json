@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    // ES2022 for the vendored Concord core, which uses Promise.any (ES2021)
+    // and `new Error(msg, { cause })` (ES2022). `lib` only controls which
+    // types are visible; `target` still emits ES2020. Both features are
+    // available in every browser and Capacitor WebView this app ships to.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
 
