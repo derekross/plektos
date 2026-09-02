@@ -94,7 +94,10 @@ Inside that channel's stream, as rumors:
 | `31922` / `31923` | **the event itself.** Its `d` is stable across edits |
 | `31925` | RSVPs, `e`-tagging the calendar rumor id |
 | `31800` | sign-up board items |
-| `9` / `7` / `5` / `3302` | chat, reactions, deletes, edits |
+| `9` | chat messages (NIP-C7). An inline quote stays a kind 9 with a `q` tag citing the quoted **rumor** id — CORD-03 §2.1 |
+| `7` | reactions (NIP-25): `e` → target rumor id, `p` → its author, `k` → `"9"` — CORD-03 §2.3 |
+| `5` | deletes, honoured only from the target rumor's own author |
+| `3302` | edits |
 
 RSVPs `e`-tag a **rumor id**, not an `a` coordinate, because an unsigned rumor has no
 addressable coordinate. Editing republishes under the same `d` and mints a new rumor
