@@ -46,7 +46,8 @@ ecosystem.
 
 ## Private events
 
-A private Plektos event is **a Concord V2 community**, not a NIP-52 event on relays.
+A private Plektos event is **a private channel in a Concord V2 community**, not a
+NIP-52 event on relays.
 Plektos is an *implementer* of Concord, not the author of it: the wire format is
 specified by CORD-01 … CORD-08 (https://github.com/concord-protocol/concord) and
 implemented by `src/concord/lib`, vendored from `@concord-protocol/core`, which is
@@ -117,9 +118,8 @@ headcount.
 
 ### Control plane
 
-Plektos **writes** exactly two owner-signed editions, both at version 1 with no
-`prevHash` and no authority citation (the host is the owner, so delegation
-short-circuits):
+Plektos **writes** exactly ONE owner-signed edition, at version 1 with no `prevHash`
+and no authority citation (the host is the owner, so delegation short-circuits):
 
 | `vsk` | entity | when |
 | --- | --- | --- |
@@ -143,8 +143,9 @@ never author:
 - compaction, voice (CORD-07), or direct invites (`3313`).
 
 It reads all of the above where the vendored core supports it. A Concord client can
-therefore expect a Plektos-created community to have a metadata edition, one channel
-edition, and nothing else.
+therefore expect a Plektos-created community to have a single metadata edition and
+nothing else — no channel definitions at all, even though the community holds
+channels. Those are discoverable only by holding their keys.
 
 Membership keys live in kind **33302** fragments, NIP-44 encrypted to self — the
 current Community List format. Plektos does not read or write the retired single-event
