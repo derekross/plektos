@@ -43,6 +43,7 @@ export function PrivacySheet({
               <li>✅ The title, description and address</li>
               <li>✅ Who's going, and how many they're bringing</li>
               <li>✅ Anything posted inside the party</li>
+              <li>✅ The cover image — the host encrypts it before uploading</li>
             </ul>
           </section>
 
@@ -62,7 +63,6 @@ export function PrivacySheet({
                 Removing someone stops them getting new invites. It does not take back what
                 they've already seen, and screenshots aren't encrypted.
               </li>
-              <li>The cover image is stored unencrypted.</li>
             </ul>
           </section>
 

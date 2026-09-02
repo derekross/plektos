@@ -15,6 +15,7 @@ import {
   KIND_CALENDAR_TIME,
 } from "@/concord/lib/kinds";
 import type { OpenedEvent } from "@/concord/lib/stream";
+import { isImagePointer, type ImagePointer } from "@/concord/lib/types";
 
 export { KIND_CALENDAR_DATE, KIND_CALENDAR_TIME, KIND_CALENDAR_RSVP } from "@/concord/lib/kinds";
 
@@ -44,6 +45,8 @@ export interface CalendarEvent {
   description: string;
   summary?: string;
   image?: string;
+  /** Encrypted cover, when the host published one. See `CalendarEventInput`. */
+  imageEnc?: ImagePointer;
   location?: string;
   /** 31922: `YYYY-MM-DD`. 31923: unix seconds (as a string). */
   start: string;
@@ -67,6 +70,12 @@ export interface CalendarEventInput {
   description?: string;
   summary?: string;
   image?: string;
+  /**
+   * An ENCRYPTED cover image. Carried in its own `image_enc` tag rather than in
+   * `image`, which other NIP-52 clients expect to be a plain URL — they ignore
+   * the unknown tag and simply show no cover, instead of rendering a broken one.
+   */
+  imageEnc?: ImagePointer;
   location?: string;
   start: string;
   end?: string;
@@ -131,6 +140,21 @@ function tag(event: { tags: string[][] }, name: string): string[] | undefined {
   return event.tags.find((t) => t[0] === name);
 }
 
+/**
+ * Parse an `image_enc` tag. Returns undefined for anything malformed — the tag
+ * is attacker-supplied like every other, and a bad pointer must degrade to "no
+ * cover", never to a thrown render.
+ */
+function parseImagePointerTag(raw: string | undefined): ImagePointer | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isImagePointer(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** A short random identifier suitable for a NIP-52 `d` tag. */
 export function randomCalendarId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
@@ -148,6 +172,9 @@ export function buildCalendarTags(input: CalendarEventInput): string[][] {
   if (input.kind === KIND_CALENDAR_TIME && input.startTzid) tags.push(["start_tzid", input.startTzid]);
   if (input.summary) tags.push(["summary", input.summary]);
   if (input.image) tags.push(["image", input.image]);
+  // The pointer is JSON in its own tag. A reader without the key sees an opaque
+  // blob it does not understand and skips it, which is the intended degradation.
+  if (input.imageEnc) tags.push(["image_enc", JSON.stringify(input.imageEnc)]);
   if (input.location) tags.push(["location", input.location]);
   // Contribution extension (custom tags; plain NIP-52 clients ignore them).
   if (input.amount) tags.push(["amount", input.amount]);
@@ -196,6 +223,7 @@ export function parseCalendarRumor(ev: OpenedEvent): CalendarEvent | undefined {
     description: ev.content ?? "",
     summary: tag(ev, "summary")?.[1],
     image: tag(ev, "image")?.[1],
+    imageEnc: parseImagePointerTag(tag(ev, "image_enc")?.[1]),
     location: tag(ev, "location")?.[1],
     start,
     end: tag(ev, "end")?.[1] || undefined,

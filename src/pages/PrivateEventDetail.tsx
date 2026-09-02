@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePrivateEventCalendar } from "@/hooks/private/usePrivateEventCalendar";
 import { usePrivateEventLive } from "@/hooks/private/usePrivateEventLive";
+import { useDecryptedImage } from "@/hooks/private/useDecryptedImage";
 import { formatCalendarEventWhen, type RsvpStatus } from "@/lib/private/calendar";
 
 const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
@@ -45,6 +46,9 @@ export function PrivateEventDetail() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [busy, setBusy] = useState<RsvpStatus>();
+
+  // Decrypts in the background; the hero renders on the gradient until it lands.
+  const { url: coverUrl } = useDecryptedImage(event?.imageEnc);
 
   // First load with nothing cached shows skeletons, never a fake empty state —
   // "no event" and "haven't reached the relays yet" look identical otherwise.
@@ -97,10 +101,10 @@ export function PrivateEventDetail() {
     <div className="container mx-auto max-w-3xl space-y-4 p-4 pb-28">
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl bg-party-gradient p-6 text-primary-foreground">
-        {event.image && (
+        {(coverUrl ?? event.image) && (
           <>
             <img
-              src={event.image}
+              src={coverUrl ?? event.image}
               alt=""
               aria-hidden
               className="absolute inset-0 size-full object-cover"

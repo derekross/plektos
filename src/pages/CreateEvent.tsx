@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PrivacySelector } from "@/components/private/PrivacySelector";
+import { PrivateImageUpload } from "@/components/private/PrivateImageUpload";
+import type { ImagePointer } from "@/concord/lib/types";
 import { useCreatePrivateEvent } from "@/hooks/private/useCreatePrivateEvent";
 import { randomCalendarId } from "@/lib/private/calendar";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -73,6 +75,7 @@ export function CreateEvent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<"vibe" | "details">("vibe");
   const [isPrivate, setIsPrivate] = useState(false);
+  const [coverEnc, setCoverEnc] = useState<ImagePointer>();
   const createPrivate = useCreatePrivateEvent();
   const [eventTheme, setEventTheme] = useState<ThemeConfig | null>(null);
   const [titleFontFamily, setTitleFontFamily] = useState<string | null>(null);
@@ -236,7 +239,9 @@ export function CreateEvent() {
             title: formData.title,
             description: formData.description,
             location: formData.location || undefined,
-            image: formData.imageUrl || undefined,
+            // A private party's cover is encrypted, so it rides `image_enc`
+            // instead of the plain `image` URL tag.
+            imageEnc: coverEnc,
             start,
             ...(hasTime ? { startTzid: formData.timezone } : {}),
             // Contribution extension — the same tag names Armada and the
@@ -610,12 +615,21 @@ export function CreateEvent() {
         }
       />
 
-      <ImageUpload
-        value={formData.imageUrl}
-        onChange={(url) => {
-          setFormData((prev) => ({ ...prev, imageUrl: url }));
-        }}
-      />
+      {/*
+        Private parties encrypt the cover before it leaves the device. The
+        ordinary uploader publishes the plaintext to Blossom the moment a file
+        is picked, which for a private party is the whole problem.
+      */}
+      {isPrivate ? (
+        <PrivateImageUpload value={coverEnc} onChange={setCoverEnc} />
+      ) : (
+        <ImageUpload
+          value={formData.imageUrl}
+          onChange={(url) => {
+            setFormData((prev) => ({ ...prev, imageUrl: url }));
+          }}
+        />
+      )}
 
       <CategorySelector
         selectedCategories={formData.categories}

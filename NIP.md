@@ -158,8 +158,11 @@ kind 13302.
   CORD-06 rekey, which Plektos does not implement.
 - **Any keyholder can leak.** Shared-key group encryption has no answer to a member
   who screenshots or forwards the key.
-- **The cover image is not encrypted.** It is uploaded to Blossom in the clear; only
-  its URL travels inside the encrypted rumor.
+- **The cover image IS encrypted** (AES-256-GCM), uploaded as an opaque blob, and its
+  key travels inside the encrypted rumor. It rides an `["image_enc", "<pointer JSON>"]`
+  tag — never the plain `image` tag, which other NIP-52 clients expect to be a URL and
+  would render as a broken cover. `{url, key, nonce, hash}`; the plaintext SHA-256 is
+  verified after decrypt.
 - **Relays learn traffic shape.** They see a stream address, event volume and timing —
   not membership, content, kinds or author identities.
 - **The invite link's secret is in the URL fragment**, so it never reaches a server.
