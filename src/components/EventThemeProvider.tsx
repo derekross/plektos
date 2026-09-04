@@ -23,6 +23,19 @@ interface EventThemeProviderProps {
  * - Loading custom fonts specified in the theme
  * - Applying background images with cover/tile modes
  */
+/**
+ * Whether a sanitized font URL is one the app will actually load: same-origin,
+ * or an inline `data:` face. Anything else is a third-party fetch we decline.
+ */
+function isLoadableFontUrl(url: string): boolean {
+  if (url.startsWith("data:")) return true;
+  try {
+    return new URL(url, globalThis.location.href).origin === globalThis.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export function EventThemeProvider({ theme, children }: EventThemeProviderProps) {
   const originalValuesRef = useRef<Map<string, string>>(new Map());
   const fontStyleRef = useRef<HTMLStyleElement | null>(null);
@@ -85,13 +98,23 @@ export function EventThemeProvider({ theme, children }: EventThemeProviderProps)
       if (font.url) {
         const url = sanitizeCssUrl(font.url);
         if (!url) continue;
-        fontRules.push(`
-          @font-face {
-            font-family: '${family}';
-            src: url('${url}');
-            font-display: swap;
-          }
-        `);
+        // A cross-origin face is dropped on purpose, and the CSP is not the
+        // only reason. `font.url` is chosen by whoever authored the theme
+        // event, so fetching it tells that author the IP and User-Agent of
+        // everyone who so much as looks at an event using their theme — a
+        // per-view tracking beacon dressed as a font. `font-src 'self' data:'
+        // already blocks it in production, so emitting the rule anyway only
+        // bought a console error; the family below still resolves through the
+        // fallback stack, which is the visible, honest degradation.
+        if (isLoadableFontUrl(url)) {
+          fontRules.push(`
+            @font-face {
+              font-family: '${family}';
+              src: url('${url}');
+              font-display: swap;
+            }
+          `);
+        }
       }
 
       if (font.role === "body") fontFamilies.body = family;
