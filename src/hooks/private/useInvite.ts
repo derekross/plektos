@@ -7,43 +7,124 @@ import { useNostr } from "@nostrify/react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { addToList } from "@/concord/lib/communityList";
 import { KIND_INVITE_BUNDLE } from "@/concord/lib/kinds";
-import { parseBundleEvent, parseInviteLink, type ParsedInviteLink } from "@/concord/lib/invite";
+import {
+  buildRevocationEvent,
+  parseBundleEvent,
+  parseInviteLink,
+  type InviteListEntry,
+  type ParsedInviteLink,
+} from "@/concord/lib/invite";
+import { hexToBytes } from "@/concord/lib/derive";
+import { addInvite, defaultExpiry, revokeInvite } from "@/lib/private/inviteList";
 import type { Community } from "@/concord/lib/types";
 import { bundleToJoinMaterial, mintInvite } from "@/lib/private/invite";
 import { PRIVATE_EVENT_RELAYS, resolvePrivateRelays } from "@/lib/private/relays";
 import { usePrivateParties } from "./usePrivateEvent";
 import { usePublishPrivateEventKeys } from "./usePrivateEventKeys";
+import { usePublishInviteList } from "./useInviteList";
 
-/** Publish a fresh invite link for an event the viewer hosts. */
+/**
+ * Publish a fresh invite link for an event the viewer hosts.
+ *
+ * Two things happen that did not before: the link is given an expiry, and it
+ * is recorded in the host's Invite List so it can be shown again and revoked.
+ * The record is written AFTER the bundle is published — a recorded link that
+ * does not exist would show the host a link nobody can use, which is worse
+ * than an unrecorded one they can simply mint again.
+ */
 export function useMintInvite() {
   const { nostr } = useNostr();
   const { parties } = usePrivateParties();
+  const publishInvites = usePublishInviteList();
 
   return useMutation({
     mutationFn: async ({
       community,
       channelIdHex,
       description,
+      eventEndsMs,
+      neverExpires,
     }: {
       community: Community;
       channelIdHex: string;
       description?: string;
+      /** End of the party, so the link outlives it rather than the mint date. */
+      eventEndsMs?: number;
+      neverExpires?: boolean;
     }) => {
-      const { event, url } = mintInvite(community, channelIdHex, window.location.origin, {
+      const now = Date.now();
+      // MILLISECONDS here: `parseBundleEvent` compares `expires_at` against
+      // Date.now(). The Invite List stores seconds. See inviteList.ts.
+      const expiresAtMs = neverExpires ? undefined : defaultExpiry(eventEndsMs, now);
+
+      const minted = mintInvite(community, channelIdHex, window.location.origin, {
         description,
+        ...(expiresAtMs ? { expiresAt: expiresAtMs } : {}),
         // Passed along so a guest's first open is one lookup by id rather than
         // a walk back through the party's whole history. Absent for a party
         // created before anchors existed, which costs the guest nothing but a
         // slower first load.
         anchor: parties.find((p) => p.channelIdHex === channelIdHex)?.anchor,
       });
+
       // The bundle is signed by the single-use link keypair, so this costs the
       // host zero signer round-trips.
-      await nostr.event(event, {
+      await nostr.event(minted.event, {
         signal: AbortSignal.timeout(15_000),
         relays: resolvePrivateRelays(community.relays),
       });
-      return url;
+
+      await publishInvites.mutateAsync((prev) =>
+        addInvite(
+          prev,
+          {
+            token: minted.token,
+            signerSk: minted.signerSk,
+            communityId: community.idHex,
+            channelIdHex,
+            url: minted.url,
+            expiresAtMs,
+          },
+          now,
+        ),
+      );
+
+      return minted.url;
+    },
+  });
+}
+
+/**
+ * Turn off a link.
+ *
+ * Re-posts the link's coordinate as a CORD-05 tombstone, which every client
+ * reading the bundle refuses. That is the whole of it, and the UI must not
+ * imply more: anyone who already redeemed this link holds the channel key and
+ * keeps it. Revocation stops new joins; it does not remove a guest.
+ *
+ * The revocation is published BEFORE the local record is tombstoned, so a
+ * failure leaves the host still able to see and retry the link rather than
+ * believing they turned off something that is still live.
+ */
+export function useRevokeInvite() {
+  const { nostr } = useNostr();
+  const publishInvites = usePublishInviteList();
+
+  return useMutation({
+    mutationFn: async ({
+      entry,
+      community,
+    }: {
+      entry: InviteListEntry;
+      community: Community;
+    }) => {
+      await nostr.event(buildRevocationEvent(hexToBytes(entry.signer_sk)), {
+        signal: AbortSignal.timeout(15_000),
+        relays: resolvePrivateRelays(community.relays),
+      });
+      await publishInvites.mutateAsync((prev) =>
+        revokeInvite(prev, entry.token, entry.community_id),
+      );
     },
   });
 }

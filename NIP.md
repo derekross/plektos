@@ -154,11 +154,33 @@ Membership keys live in kind **33302** fragments, NIP-44 encrypted to self — t
 current Community List format. Plektos does not read or write the retired single-event
 kind 13302.
 
+Two Plektos-specific fields ride the `JoinMaterial` index signature, which `listFrag`
+preserves through its `extra` buckets:
+
+| Field | Meaning |
+| --- | --- |
+| `plektos_events` | Marks the host's one "Plektos Events" community. |
+| `plektos_anchors` | Channel id → the calendar rumor's **wrap id**. A cache, never a capability: it turns opening a party into one `{ids:[…]}` lookup instead of a walk back through its history, and losing it only costs a slower open. Carried to guests in the invite bundle as `plektos_anchor` (singular — a bundle holds exactly one channel). |
+
+Minted invite links are recorded in the CORD-05 **Invite List, kind 13303**, NIP-44
+encrypted to self. This is what makes a link revocable: `buildRevocationEvent` needs the
+link's `signer_sk`, and there is nowhere else to keep it. Entries carry a
+`plektos_channel` field naming the party, since one host's list spans all of them.
+Links default to expiring 30 days after the party ends.
+
+> **Two `expires_at` fields, two units.** `InviteBundle.expires_at` is **milliseconds**
+> (`parseBundleEvent` compares it against `Date.now()`); `InviteListEntry.expires_at` is
+> **seconds** (`buildRefreshedBundleEvents` multiplies by 1000). Swapping them yields a
+> link that is born expired or never expires, and both fail silently.
+
 ### Security properties, stated plainly
 
-- **No revocation.** A guest who holds the key keeps it. Removing someone stops new
-  invites; it does not lock them out of what they already have. Concord's answer is a
-  CORD-06 rekey, which Plektos does not implement.
+- **No revocation of a guest.** A guest who holds the key keeps it. Concord's answer is
+  a CORD-06 rekey, which Plektos does not implement. What Plektos *can* do is turn off an
+  invite **link** (a CORD-05 tombstone at the link's coordinate), which stops anyone new
+  from joining with it. The UI says exactly that and never implies more.
+- **Links expire.** By default 30 days after the party ends, anchored to the event rather
+  than the mint date so a party booked months out still has a working link.
 - **Any keyholder can leak.** Shared-key group encryption has no answer to a member
   who screenshots or forwards the key.
 - **The cover image IS encrypted** (AES-256-GCM), uploaded as an opaque blob, and its

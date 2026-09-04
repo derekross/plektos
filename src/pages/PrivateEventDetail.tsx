@@ -27,7 +27,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePrivateEventCalendar } from "@/hooks/private/usePrivateEventCalendar";
 import { usePrivateEventLive } from "@/hooks/private/usePrivateEventLive";
 import { useDecryptedImage } from "@/hooks/private/useDecryptedImage";
-import { formatCalendarEventWhen, type RsvpStatus } from "@/lib/private/calendar";
+import { endEpoch, formatCalendarEventWhen, type RsvpStatus } from "@/lib/private/calendar";
 
 const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
   { status: "accepted", emoji: "✨", label: "Going" },
@@ -233,6 +233,10 @@ export function PrivateEventDetail() {
       <InviteSheet
         community={community}
         channelIdHex={channelId!}
+        // Anchors the link's expiry to the party, not to the moment it was
+        // made: a flat window would kill the link for a party booked months
+        // out, which is exactly when a host shares it.
+        eventEndsMs={endEpoch(event) * 1000}
         open={inviteOpen}
         onOpenChange={setInviteOpen}
       />

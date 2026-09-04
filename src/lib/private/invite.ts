@@ -76,6 +76,12 @@ export function mintInvite(
     event: buildBundleEvent(bundle, token, sk),
     url: buildInviteUrl(origin, pk, token, community.relays),
     linkSigner: pk,
+    // Both are needed to record the link in the Invite List: the token is its
+    // merge key there, and the signer secret is the ONLY thing that can later
+    // author a revocation at this coordinate. Discarding them, as this did
+    // before, is what made every minted link permanent.
+    token: bytesToHex(token),
+    signerSk: bytesToHex(sk),
   };
 }
 
