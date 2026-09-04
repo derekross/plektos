@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import react from "@vitejs/plugin-react-swc";
+import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -68,7 +69,17 @@ export default defineConfig(() => ({
     strictPort: false, // Allow port fallback if 8080 is busy
     open: false, // Don't auto-open browser
   },
-  plugins: [react(), cspMeta()],
+  plugins: [
+    react(),
+    cspMeta(),
+    // `ANALYZE=1 npm run build` writes dist/stats.html. Behind a flag because
+    // it is a build-time diagnostic, not part of shipping — and because
+    // splitting a bundle without measuring it first is how you end up with
+    // more requests and no less code.
+    ...(process.env.ANALYZE
+      ? [visualizer({ filename: "dist/stats.html", gzipSize: true, template: "treemap" })]
+      : []),
+  ],
   build: {
     // Ensure assets are versioned with hashes for cache busting
     rollupOptions: {

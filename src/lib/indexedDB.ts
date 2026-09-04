@@ -1,4 +1,4 @@
-import Dexie, { Table } from "dexie";
+import type { Table } from "dexie";
 import type { NostrEvent } from "@nostrify/nostrify";
 import type { DateBasedEvent, TimeBasedEvent, EventRSVP, LiveEvent, RoomMeeting, InteractiveRoom } from "./eventTypes";
 
@@ -28,25 +28,51 @@ interface CachedFollowList {
   cachedAt: number;
 }
 
-class EventDatabase extends Dexie {
-  events!: Table<CalendarEvent>;
-  rsvps!: Table<EventRSVP>;
-  profiles!: Table<CachedProfile>;
-  followLists!: Table<CachedFollowList>;
-
-  constructor() {
-    super("PlektosDatabase");
-    // Version 2 adds profiles and followLists tables
-    this.version(2).stores({
-      events: "id, pubkey, created_at, kind",
-      rsvps: "id, pubkey, created_at, kind",
-      profiles: "pubkey, cachedAt",
-      followLists: "pubkey, cachedAt",
-    });
-  }
+interface EventDb {
+  events: Table<CalendarEvent>;
+  rsvps: Table<EventRSVP>;
+  profiles: Table<CachedProfile>;
+  followLists: Table<CachedFollowList>;
 }
 
-export const db = new EventDatabase();
+/**
+ * Dexie, loaded on first use rather than at import time.
+ *
+ * It is ~94 kB, and this module is reached from `useAuthor` — which is on
+ * essentially every screen — so a static import put all of it in the initial
+ * bundle, ahead of first paint, to serve a cache that only matters once
+ * something has been cached. Every caller here is already `async`, so
+ * awaiting the module costs them nothing they were not already awaiting.
+ *
+ * The promise is memoised, not the database: a failed import (offline, a
+ * pruned chunk after a deploy) must be retryable rather than poisoning the
+ * cache for the session.
+ */
+let dbPromise: Promise<EventDb> | undefined;
+
+function getDb(): Promise<EventDb> {
+  if (!dbPromise) {
+    dbPromise = import("dexie").then(({ default: Dexie }) => {
+      class EventDatabase extends Dexie {
+        constructor() {
+          super("PlektosDatabase");
+          // Version 2 adds profiles and followLists tables
+          this.version(2).stores({
+            events: "id, pubkey, created_at, kind",
+            rsvps: "id, pubkey, created_at, kind",
+            profiles: "pubkey, cachedAt",
+            followLists: "pubkey, cachedAt",
+          });
+        }
+      }
+      return new EventDatabase() as unknown as EventDb;
+    });
+    dbPromise.catch(() => {
+      dbPromise = undefined;
+    });
+  }
+  return dbPromise;
+}
 
 // Event caching
 export async function cacheEvent(
@@ -54,9 +80,9 @@ export async function cacheEvent(
 ) {
   try {
     if (event.kind === 31925) {
-      await db.rsvps.put(event as EventRSVP);
+      await (await getDb()).rsvps.put(event as EventRSVP);
     } else {
-      await db.events.put(event as CalendarEvent);
+      await (await getDb()).events.put(event as CalendarEvent);
     }
   } catch {
     // Silently fail - caching is optional
@@ -70,7 +96,7 @@ const MAX_CACHED_RSVPS = 500;
 export async function getCachedEvents(): Promise<CalendarEvent[]> {
   try {
     // Return only the most recent events, sorted by created_at descending
-    return await db.events.orderBy("created_at").reverse().limit(MAX_CACHED_EVENTS).toArray();
+    return await (await getDb()).events.orderBy("created_at").reverse().limit(MAX_CACHED_EVENTS).toArray();
   } catch {
     return [];
   }
@@ -78,7 +104,7 @@ export async function getCachedEvents(): Promise<CalendarEvent[]> {
 
 export async function getCachedRSVPs(): Promise<EventRSVP[]> {
   try {
-    return await db.rsvps.orderBy("created_at").reverse().limit(MAX_CACHED_RSVPS).toArray();
+    return await (await getDb()).rsvps.orderBy("created_at").reverse().limit(MAX_CACHED_RSVPS).toArray();
   } catch {
     return [];
   }
@@ -91,7 +117,7 @@ export async function cacheProfile(
   metadata: CachedProfile["metadata"]
 ) {
   try {
-    await db.profiles.put({
+    await (await getDb()).profiles.put({
       pubkey,
       event,
       metadata,
@@ -107,7 +133,7 @@ export async function cacheProfiles(
 ) {
   try {
     const cachedAt = Date.now();
-    await db.profiles.bulkPut(
+    await (await getDb()).profiles.bulkPut(
       profiles.map(p => ({ ...p, cachedAt }))
     );
   } catch {
@@ -117,7 +143,7 @@ export async function cacheProfiles(
 
 export async function getCachedProfile(pubkey: string): Promise<CachedProfile | undefined> {
   try {
-    return await db.profiles.get(pubkey);
+    return await (await getDb()).profiles.get(pubkey);
   } catch {
     return undefined;
   }
@@ -125,7 +151,7 @@ export async function getCachedProfile(pubkey: string): Promise<CachedProfile | 
 
 export async function getCachedProfiles(pubkeys: string[]): Promise<Map<string, CachedProfile>> {
   try {
-    const profiles = await db.profiles.where("pubkey").anyOf(pubkeys).toArray();
+    const profiles = await (await getDb()).profiles.where("pubkey").anyOf(pubkeys).toArray();
     return new Map(profiles.map(p => [p.pubkey, p]));
   } catch {
     return new Map();
@@ -134,7 +160,7 @@ export async function getCachedProfiles(pubkeys: string[]): Promise<Map<string, 
 
 export async function getAllCachedProfiles(): Promise<CachedProfile[]> {
   try {
-    return await db.profiles.toArray();
+    return await (await getDb()).profiles.toArray();
   } catch {
     return [];
   }
@@ -147,7 +173,7 @@ export async function cacheFollowList(
   followedPubkeys: string[]
 ) {
   try {
-    await db.followLists.put({
+    await (await getDb()).followLists.put({
       pubkey,
       event,
       followedPubkeys,
@@ -160,7 +186,7 @@ export async function cacheFollowList(
 
 export async function getCachedFollowList(pubkey: string): Promise<CachedFollowList | undefined> {
   try {
-    return await db.followLists.get(pubkey);
+    return await (await getDb()).followLists.get(pubkey);
   } catch {
     return undefined;
   }
@@ -184,6 +210,7 @@ async function trimByCount(table: Table<CalendarEvent> | Table<EventRSVP>, max: 
 export async function cleanupOldCache(maxAgeMs: number = 24 * 60 * 60 * 1000) {
   try {
     const cutoff = Date.now() - maxAgeMs;
+    const db = await getDb();
 
     await Promise.all([
       db.profiles.where("cachedAt").below(cutoff).delete(),

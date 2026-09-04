@@ -11,6 +11,12 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Link } from "react-router-dom";
 import { useState, useMemo, useRef, useCallback, lazy, Suspense } from "react";
+
+// react-day-picker is 92 kB and sits behind the date-range popover in the
+// filter panel. CreateEvent's picker loads its own copy in that route's chunk.
+const Calendar = lazy(() =>
+  import("@/components/ui/calendar").then((m) => ({ default: m.Calendar })),
+);
 import { createEventIdentifier } from "@/lib/nip19Utils";
 import type { DateBasedEvent, TimeBasedEvent, LiveEvent, RoomMeeting, InteractiveRoom, EventRSVP } from "@/lib/eventTypes";
 import { isLiveEvent, isInPersonEvent, getStreamingUrl, getLiveEventStatus } from "@/lib/liveEventUtils";
@@ -18,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Calendar } from "@/components/ui/calendar";
+
 import {
   Popover,
   PopoverContent,
@@ -675,6 +681,7 @@ export function Home() {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 rounded-2xl" align="start">
+                        <Suspense fallback={<div className="h-72 w-[36rem] max-w-[80vw]" />}>
                         <Calendar
                           initialFocus
                           mode="range"
@@ -684,6 +691,7 @@ export function Home() {
                           numberOfMonths={2}
                           className="rounded-2xl"
                         />
+                        </Suspense>
                       </PopoverContent>
                     </Popover>
                   </div>
