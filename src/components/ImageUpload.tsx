@@ -36,8 +36,6 @@ export function ImageUpload({ value, onChange }: ImageUploadProps) {
 
     try {
       const result = await uploadFile(file);
-      console.log("Image upload result:", result);
-      console.log("Calling onChange with URL:", result.url);
       onChange(result.url);
       setPreviewUrl(result.previewUrl);
     } catch (error) {
@@ -74,7 +72,6 @@ export function ImageUpload({ value, onChange }: ImageUploadProps) {
   };
 
   const removeImage = () => {
-    console.log("Removing image");
     onChange("");
     setPreviewUrl("");
   };

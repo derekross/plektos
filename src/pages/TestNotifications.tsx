@@ -18,7 +18,6 @@ export function TestNotifications() {
       status: 'accepted',
     };
     addNotification(notification);
-    console.log('Added RSVP notification:', notification);
   };
 
   const addTestRSVPDeclined = () => {
@@ -33,7 +32,6 @@ export function TestNotifications() {
       status: 'declined',
     };
     addNotification(notification);
-    console.log('Added RSVP declined notification:', notification);
   };
 
   const addTestRSVPTentative = () => {
@@ -48,7 +46,6 @@ export function TestNotifications() {
       status: 'tentative',
     };
     addNotification(notification);
-    console.log('Added RSVP tentative notification:', notification);
   };
 
   const addTestComment = () => {
@@ -64,7 +61,6 @@ export function TestNotifications() {
       commentId: `comment-${Date.now()}`,
     };
     addNotification(notification);
-    console.log('Added comment notification:', notification);
   };
 
   const addTestZap = () => {
@@ -80,7 +76,6 @@ export function TestNotifications() {
       comment: 'Great event! ⚡',
     };
     addNotification(notification);
-    console.log('Added zap notification:', notification);
   };
 
   const addMultipleNotifications = () => {
@@ -106,19 +101,16 @@ export function TestNotifications() {
       };
       addNotification(notification);
     }
-    console.log('Added 10 test notifications for scrolling test');
   };
 
   const testMarkAsRead = () => {
     if (notifications.length > 0) {
       const firstNotification = notifications[0];
-      console.log('Testing mark as read for:', firstNotification.id);
       markAsRead(firstNotification.id);
     }
   };
 
   const testMarkAllAsRead = () => {
-    console.log('Testing mark all as read');
     markAllAsRead();
   };
 

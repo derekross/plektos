@@ -36,10 +36,23 @@ export default tseslint.config(
         },
       ],
       "custom/no-placeholder-comments": "error",
+      // Debug logging is not free in a shipped app: it is noise for anyone with
+      // devtools open, and several of the removed calls printed whole Nostr
+      // events and the user's own search text. warn/error stay, because a real
+      // diagnostic is worth having.
+      "no-console": ["error", { allow: ["warn", "error"] }],
       "no-warning-comments": [
         "error",
         { terms: ["fixme"] },
       ],
+    },
+  },
+  {
+    // Tests print diagnostics for a human reading the terminal; that is what a
+    // test run is for. The ban exists to keep logging out of the shipped app.
+    files: ["**/*.test.{ts,tsx}", "src/test/**"],
+    rules: {
+      "no-console": "off",
     },
   },
   {

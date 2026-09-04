@@ -38,7 +38,6 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
       console.error("Failed to publish event:", error);
     },
     onSuccess: (data) => {
-      console.log("Event published successfully:", data);
       
       // If this is a calendar event (kind 31922 or 31923), update the events cache for immediate feedback
       if (data.kind === 31922 || data.kind === 31923) {
@@ -59,7 +58,6 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
               // Check if this event already exists (by coordinate for replaceable events)
               const dTag = typedEvent.tags.find(tag => tag[0] === 'd')?.[1];
               if (dTag) {
-                const coordinate = `${typedEvent.kind}:${typedEvent.pubkey}:${dTag}`;
                 const existingIndex = oldData.findIndex(event => {
                   const existingDTag = event.tags.find(tag => tag[0] === 'd')?.[1];
                   return existingDTag === dTag && 
@@ -71,16 +69,13 @@ export function useNostrPublish(): UseMutationResult<NostrEvent> {
                   // Replace existing event
                   const newData = [...oldData];
                   newData[existingIndex] = typedEvent;
-                  console.log("Updated existing event in cache:", coordinate);
                   return newData;
                 } else {
                   // Add new event to the beginning of the list
-                  console.log("Added new event to cache:", coordinate);
                   return [typedEvent, ...oldData];
                 }
               } else {
                 // For events without d tag, just add to the beginning
-                console.log("Added new event without d tag to cache");
                 return [typedEvent, ...oldData];
               }
             }

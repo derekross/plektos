@@ -21,7 +21,6 @@ export function LoginArea({ className }: LoginAreaProps) {
 
 
   const handleLogin = () => {
-    console.log('LoginArea handleLogin called');
     setLoginDialogOpen(false);
     setSignupDialogOpen(false);
   };

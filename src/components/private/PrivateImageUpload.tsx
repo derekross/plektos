@@ -9,7 +9,7 @@
  *
  * The preview is a local object URL from the original file, never the upload.
  */
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ImageIcon, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,13 +33,36 @@ export function PrivateImageUpload({
   const [preview, setPreview] = useState<string>();
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Object URLs are not garbage collected — the blob stays alive until the URL
+   * is revoked, so a host who tries four covers in a row pins four full images
+   * in memory for the life of the tab. Revoke the previous one on every change,
+   * and the last one on unmount.
+   *
+   * The ref shadows the state deliberately: the unmount cleanup must see the
+   * CURRENT url, and an effect closing over `preview` would capture whichever
+   * value it last ran with.
+   */
+  const previewRef = useRef<string>();
+  const showPreview = useCallback((url: string | undefined) => {
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    previewRef.current = url;
+    setPreview(url);
+  }, []);
+  useEffect(
+    () => () => {
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    },
+    [],
+  );
+
   const pick = async (file: File) => {
     if (!file.type.startsWith("image/")) return toast.error("Pick an image file");
     if (file.size > MAX_BYTES) return toast.error("Image must be under 10MB");
 
     setBusy(true);
     try {
-      setPreview(URL.createObjectURL(file));
+      showPreview(URL.createObjectURL(file));
       const { ciphertext, key, nonce, hash } = await encryptImageBlob(file);
       // Uploaded as an opaque blob: no image mime type, no original filename.
       const blob = new File([ciphertext], `${hash.slice(0, 16)}.bin`, {
@@ -48,7 +71,7 @@ export function PrivateImageUpload({
       const result = await uploadFile(blob);
       onChange({ url: result.url, key, nonce, hash });
     } catch (err) {
-      setPreview(undefined);
+      showPreview(undefined);
       toast.error(err instanceof Error ? err.message : "Couldn't add that image");
     } finally {
       setBusy(false);
@@ -71,7 +94,7 @@ export function PrivateImageUpload({
             variant="secondary"
             className="absolute right-2 top-2"
             onClick={() => {
-              setPreview(undefined);
+              showPreview(undefined);
               onChange(undefined);
             }}
           >
