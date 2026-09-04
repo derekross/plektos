@@ -38,6 +38,12 @@ export interface PrivateEventDetail {
   event?: CalendarEvent;
   tally: RsvpTally;
   isLoading: boolean;
+  /**
+   * False when the stream read stopped short. Everything derived from the
+   * stream — the roster, the board, the thread — is then incomplete in a way
+   * that looks exactly like complete, so it has to be said out loud.
+   */
+  complete: boolean;
 }
 
 export function usePrivateEventCalendar(channelIdHex: string | undefined) {
@@ -52,6 +58,7 @@ export function usePrivateEventCalendar(channelIdHex: string | undefined) {
 
   const detail = useMemo<PrivateEventDetail>(() => {
     const opened = data?.opened ?? [];
+    const complete = data?.complete ?? false;
     const events = foldCalendarRumors(opened);
     const event = events[0];
 
@@ -77,7 +84,7 @@ export function usePrivateEventCalendar(channelIdHex: string | undefined) {
     }
 
     const tally = tallyRsvps(event ? (votesByEvent.get(event.rumorId) ?? []) : [], user?.pubkey);
-    return { event, tally, isLoading };
+    return { event, tally, isLoading, complete };
   }, [data, isLoading, user?.pubkey]);
 
   const setRsvp = useCallback(

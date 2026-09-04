@@ -11,11 +11,13 @@ import { parseBundleEvent, parseInviteLink, type ParsedInviteLink } from "@/conc
 import type { Community } from "@/concord/lib/types";
 import { bundleToJoinMaterial, mintInvite } from "@/lib/private/invite";
 import { PRIVATE_EVENT_RELAYS, resolvePrivateRelays } from "@/lib/private/relays";
+import { usePrivateParties } from "./usePrivateEvent";
 import { usePublishPrivateEventKeys } from "./usePrivateEventKeys";
 
 /** Publish a fresh invite link for an event the viewer hosts. */
 export function useMintInvite() {
   const { nostr } = useNostr();
+  const { parties } = usePrivateParties();
 
   return useMutation({
     mutationFn: async ({
@@ -29,6 +31,11 @@ export function useMintInvite() {
     }) => {
       const { event, url } = mintInvite(community, channelIdHex, window.location.origin, {
         description,
+        // Passed along so a guest's first open is one lookup by id rather than
+        // a walk back through the party's whole history. Absent for a party
+        // created before anchors existed, which costs the guest nothing but a
+        // slower first load.
+        anchor: parties.find((p) => p.channelIdHex === channelIdHex)?.anchor,
       });
       // The bundle is signed by the single-use link keypair, so this costs the
       // host zero signer round-trips.

@@ -22,13 +22,14 @@ import { useMutation } from "@tanstack/react-query";
 import { useNostr } from "@nostrify/react";
 
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { addToList, toJoinMaterial } from "@/concord/lib/communityList";
+import { addToList, toJoinMaterial, type JoinMaterial } from "@/concord/lib/communityList";
 import { sealEdition } from "@/concord/lib/control";
 import { KIND_SEAL_ENCRYPTED } from "@/concord/lib/kinds";
 import { sealRumor, wrapSeal } from "@/concord/lib/stream";
 import type { CalendarEventInput } from "@/lib/private/calendar";
 import {
   PLEKTOS_EVENTS_MARKER,
+  withAnchor,
   buildEventRumor,
   eventsCommunityGenesis,
   mintEventsCommunity,
@@ -73,30 +74,40 @@ export function useCreatePrivateEvent() {
       const party = mintPartyChannel(calendar.title);
       const community = withPartyChannel(base, party);
 
-      // 1. Keys first. If this fails we have published nothing.
+      // 1. Build and seal the event, but publish nothing yet. Sealing costs a
+      // signer round trip; wrapping is local. Doing both here is what lets the
+      // key-list write below carry the wrap id, and it keeps the invariant
+      // that matters — no content reaches a relay before the keys do.
+      const rumor = buildEventRumor(party, calendar, user.pubkey);
+      const seal = await sealRumor(rumor, KIND_SEAL_ENCRYPTED, party.stream, user.signer);
+      const wrap = wrapSeal(seal, party.stream);
+
+      // 2. Keys first. If this fails we have published nothing.
       await publishKeys.mutateAsync((prev) => {
-        const jm = toJoinMaterial(community);
+        let jm = toJoinMaterial(community) as { [k: string]: unknown };
         // The marker rides the index signature and survives the fragment
         // round trip, so the host's events community stays findable even
         // after Armada renames it.
-        (jm as { [k: string]: unknown })[PLEKTOS_EVENTS_MARKER] = true;
+        jm[PLEKTOS_EVENTS_MARKER] = true;
+        // The anchor rides the same mechanism. It makes opening this party a
+        // single `{ids: [...]}` lookup instead of a walk back through however
+        // much chat it accumulates.
+        jm = withAnchor(jm, party.idHex, wrap.id);
         return addToList(prev, {
           community_id: community.idHex,
-          seed: jm,
-          current: jm,
+          seed: jm as JoinMaterial,
+          current: jm as JoinMaterial,
           added_at: Date.now(),
         });
       });
 
-      // 2. The event itself, into its own private channel.
-      const rumor = buildEventRumor(party, calendar, user.pubkey);
-      const seal = await sealRumor(rumor, KIND_SEAL_ENCRYPTED, party.stream, user.signer);
-      await nostr.event(wrapSeal(seal, party.stream), {
+      // 3. The event itself, into its own private channel.
+      await nostr.event(wrap, {
         signal: AbortSignal.timeout(15_000),
         relays,
       });
 
-      // 3. Community metadata, once, off the critical path. A failure here
+      // 4. Community metadata, once, off the critical path. A failure here
       // leaves the community unnamed in other clients; it does not break it.
       if (isFirst) {
         void (async () => {
