@@ -286,7 +286,6 @@ export function VerifyTicket() {
         
         // Check if user is available
         if (!effectiveUser?.pubkey) {
-          console.log('❌ No user pubkey available - authentication may have failed');
           setIsEventHost(false);
           setIsCheckingEventHost(false);
           return;
@@ -302,7 +301,6 @@ export function VerifyTicket() {
           signal: AbortSignal.timeout(3000) // 3 second timeout like Profile page
         }) as unknown[];
 
-        console.log(`🔍 Found ${userEvents.length} events for user ${effectiveUser.pubkey.slice(0, 8)}...`);
 
         if (userEvents.length > 0) {
           setIsEventHost(true);
@@ -341,9 +339,7 @@ export function VerifyTicket() {
       } catch (error) {
         console.error('Error checking event host status:', error);
         // Don't set isEventHost to false on timeout - let user try again
-        if (error instanceof Error && error.message.includes('timeout')) {
-          console.log('⏰ Query timed out - will retry on next visit');
-        } else {
+        if (!(error instanceof Error && error.message.includes('timeout'))) {
           setIsEventHost(false);
         }
       } finally {
@@ -384,11 +380,6 @@ export function VerifyTicket() {
           }
         ]);
         
-        console.log(`📊 Host Dashboard Data for event ${selectedEventId}:`, {
-          ticketSales: ticketSales.length,
-          checkIns: checkIns.length,
-          userPubkey: effectiveUser.pubkey.slice(0, 8) + '...'
-        });
 
 
         // Filter ticket sales to only those for the selected event
@@ -572,19 +563,12 @@ export function VerifyTicket() {
       // Publish entry event
       publishEvent(entryEvent, {
         onSuccess: () => {
-          console.log('✅ Check-in event published successfully');
-          console.log('🎫 Check-in details:', {
-            eventId: ticketData.eventId,
-            buyerPubkey: ticketData.buyerPubkey,
-            receiptId: ticketData.receiptId
-          });
           setEntryStatus('checked_in');
           // Re-check entry status to ensure UI updates
           setTimeout(() => {
             checkEntryStatus();
             // Also refresh host dashboard data if we're on the same event
             if (selectedEventId === ticketData.eventId) {
-              console.log('🔄 Refreshing host dashboard data...');
               // Force reload the event data
               loadEventData();
             }
@@ -668,7 +652,6 @@ export function VerifyTicket() {
     if (ticketData) {
       // Check if user is logged in
       if (!user?.pubkey) {
-        console.log('❌ No user pubkey available - authentication may have failed');
         setVerificationStatus('error');
         return;
       }

@@ -58,9 +58,7 @@ export function LocationSearch({
 
     setIsLoading(true);
     try {
-      console.log("LocationSearch: Searching for:", query);
       const results = await search(query);
-      console.log("LocationSearch: Got results:", results?.length || 0);
       setSearchResults(results || []);
     } catch (error) {
       console.error("LocationSearch: Error searching locations:", error);

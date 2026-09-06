@@ -7,7 +7,12 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 import { NotificationBell } from "@/components/NotificationBell";
 import LoginDialog from "@/components/auth/LoginDialog";
-import { OnboardingDialog } from "@/components/onboarding";
+// First-run only, and it drags react-hook-form (91 kB) in with it. Rendered
+// solely when it is actually going to open, so returning visitors never pay
+// for it.
+const OnboardingDialog = lazy(() =>
+  import("@/components/onboarding").then((m) => ({ default: m.OnboardingDialog })),
+);
 import { useOnboarding } from "@/hooks/useOnboarding";
 import {
   Sidebar,
@@ -26,7 +31,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 interface AppNavigationProps {
   children: React.ReactNode;
@@ -254,6 +259,8 @@ export function AppNavigation({ children }: AppNavigationProps) {
       />
 
       {/* Onboarding Dialog */}
+      {shouldShowOnboarding && (
+      <Suspense fallback={null}>
       <OnboardingDialog
         open={shouldShowOnboarding}
         onOpenChange={(open) => {
@@ -265,6 +272,8 @@ export function AppNavigation({ children }: AppNavigationProps) {
         }}
         onComplete={completeOnboarding}
       />
+      </Suspense>
+      )}
     </>
   );
 }

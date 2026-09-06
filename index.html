@@ -2,6 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+
+    <!--
+      The Content-Security-Policy meta tag is injected at BUILD time by the
+      `plektos-csp-meta` plugin in vite.config.ts, not written here: in dev,
+      Vite injects an inline React Refresh script that `script-src 'self'`
+      would block.
+    -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
 
     <!-- Primary Meta Tags -->
@@ -30,22 +37,12 @@
     <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
     <meta name="theme-color" content="#0b0b12" />
 
-    <!-- Apply the saved (or default dark) theme before first paint to avoid a light flash -->
-    <script>
-      (function () {
-        try {
-          var theme = localStorage.getItem("plektos-theme") || "dark";
-          if (theme === "system") {
-            theme = window.matchMedia("(prefers-color-scheme: dark)").matches
-              ? "dark"
-              : "light";
-          }
-          document.documentElement.classList.add(theme);
-        } catch (e) {
-          document.documentElement.classList.add("dark");
-        }
-      })();
-    </script>
+    <!--
+      Theme before first paint. External, not inline: the production CSP is
+      `script-src 'self'`, which blocks inline script outright — as an inline
+      block this never ran. See public/theme-init.js.
+    -->
+    <script src="/theme-init.js"></script>
 
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />

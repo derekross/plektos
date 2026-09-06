@@ -18,10 +18,10 @@ import { bytesToHex } from "@/concord/lib/derive";
 import { KIND_WRAP } from "@/concord/lib/kinds";
 import type { Channel, Community } from "@/concord/lib/types";
 import type { OpenedEvent } from "@/concord/lib/stream";
-import { openEventWraps } from "@/lib/private/stream";
+import { fetchWraps, openEventWraps, streamFilter } from "@/lib/private/stream";
 import { filterDeleted } from "@/lib/private/deletes";
 import { resolvePrivateRelays } from "@/lib/private/relays";
-import { PLEKTOS_EVENTS_MARKER } from "@/lib/private/create";
+import { PLEKTOS_EVENTS_MARKER, readAnchor } from "@/lib/private/create";
 import { usePrivateEventKeys } from "./usePrivateEventKeys";
 
 /**
@@ -36,12 +36,15 @@ export function usePrivateEvents(): {
   communities: Community[];
   /** The host's "Plektos Events" community, if they have one yet. */
   eventsHome?: Community;
+  /** Channel id -> calendar wrap id, for the parties that have one recorded. */
+  anchors: Map<string, string>;
   isLoading: boolean;
 } {
   const { data, isLoading } = usePrivateEventKeys();
 
-  const { communities, eventsHome } = useMemo(() => {
-    if (!data) return { communities: [] as Community[], eventsHome: undefined };
+  const { communities, eventsHome, anchors } = useMemo(() => {
+    const anchors = new Map<string, string>();
+    if (!data) return { communities: [] as Community[], eventsHome: undefined, anchors };
     const out: Community[] = [];
     let home: Community | undefined;
     for (const entry of liveEntries(data.list)) {
@@ -50,20 +53,29 @@ export function usePrivateEvents(): {
       const community = rehydrateCommunity(entry);
       if (!community) continue;
       out.push(community);
-      if ((entry.current as { [k: string]: unknown })[PLEKTOS_EVENTS_MARKER] === true) {
-        home = community;
+      const current = entry.current as { [k: string]: unknown };
+      if (current[PLEKTOS_EVENTS_MARKER] === true) home = community;
+      // Anchors live on the entry, not the rehydrated Community — rehydration
+      // builds a fixed shape and drops unknown fields — so they are read here,
+      // at the one point where both are in hand.
+      for (const ch of community.privateChannels) {
+        const idHex = bytesToHex(ch.id);
+        const anchor = readAnchor(current, idHex);
+        if (anchor) anchors.set(idHex, anchor);
       }
     }
-    return { communities: out, eventsHome: home };
+    return { communities: out, eventsHome: home, anchors };
   }, [data]);
 
-  return { communities, eventsHome, isLoading };
+  return { communities, eventsHome, anchors, isLoading };
 }
 
 export interface PrivateParty {
   community: Community;
   channelIdHex: string;
   name: string;
+  /** Calendar wrap id, when the key list has one. See PLEKTOS_ANCHORS. */
+  anchor?: string;
 }
 
 /**
@@ -74,18 +86,22 @@ export interface PrivateParty {
  * say about them, which is what keeps one party invisible to another's guests.
  */
 export function usePrivateParties(): { parties: PrivateParty[]; isLoading: boolean } {
-  const { communities, isLoading } = usePrivateEvents();
+  const { communities, anchors, isLoading } = usePrivateEvents();
 
   const parties = useMemo(
     () =>
       communities.flatMap((community) =>
-        community.privateChannels.map((ch) => ({
-          community,
-          channelIdHex: bytesToHex(ch.id),
-          name: ch.name,
-        })),
+        community.privateChannels.map((ch) => {
+          const channelIdHex = bytesToHex(ch.id);
+          return {
+            community,
+            channelIdHex,
+            name: ch.name,
+            anchor: anchors.get(channelIdHex),
+          };
+        }),
       ),
-    [communities],
+    [communities, anchors],
   );
 
   return { parties, isLoading };
@@ -113,35 +129,55 @@ export interface PrivateStreamState {
   opened: OpenedEvent[];
   /** The resolved channel, carried out so writers need not re-resolve it. */
   channel?: Channel;
+  /**
+   * False when the history walk stopped before the end. The UI must say so —
+   * a party rendered from a partial stream has a wrong roster and a wrong
+   * board, and looks exactly like a complete one.
+   */
+  complete: boolean;
 }
 
 /** Fetch and open one party's stream. */
 export function usePrivateEventStream(channelIdHex: string | undefined) {
   const { nostr } = useNostr();
-  const { community } = usePrivateParty(channelIdHex);
+  const { party, community } = usePrivateParty(channelIdHex);
+  const anchor = party?.anchor;
 
   return useQuery<PrivateStreamState>({
+    // Two elements, deliberately. `usePrivateEventLive` pushes incoming wraps
+    // into this cache with `setQueryData`, which matches EXACTLY — adding the
+    // anchor here would write live messages into an entry nobody reads, and
+    // live updates would stop with no error anywhere. The anchor is read fresh
+    // inside the query instead; learning one later only adds a wrap, and the
+    // 15s staleTime picks it up.
     queryKey: ["private-stream", channelIdHex ?? ""],
     queryFn: async (c) => {
-      if (!community || !channelIdHex) return { opened: [] };
-      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(12_000)]);
+      if (!community || !channelIdHex) return { opened: [], complete: false };
+      // ONE deadline for the whole read, not one per request. NPool.query
+      // resolves only when every routed relay has EOSEd, so a single slow relay
+      // costs a page its full timeout; a per-page timeout would multiply that
+      // by the page count instead of bounding it.
+      const signal = AbortSignal.any([c.signal, AbortSignal.timeout(25_000)]);
       const relays = resolvePrivateRelays(community.relays);
+      const query = (filters: Parameters<typeof nostr.query>[0], opts: { signal: AbortSignal; relays: string[] }) =>
+        nostr.query(filters, opts);
 
       // The fold still matters: it carries the community's metadata and its
       // relay set, and would carry a channel definition if one ever landed.
       const groups = controlGroups(community);
-      const controlWraps = await nostr.query(
-        [{ kinds: [KIND_WRAP], authors: groups.map((g) => g.pk), limit: 200 }],
-        { signal, relays },
+      const control = await fetchWraps(
+        query as never,
+        { kinds: [KIND_WRAP], authors: groups.map((g) => g.pk) },
+        { relays, signal, maxPages: 8 },
       );
       const folded = foldControlState(
-        openControlWraps(controlWraps, groups),
+        openControlWraps(control.wraps, groups),
         community.id,
         community.owner,
       );
 
       const channel = channelsView(community, folded).find((ch) => ch.idHex === channelIdHex);
-      if (!channel) return { opened: [] };
+      if (!channel) return { opened: [], complete: false };
 
       const streams = channel.streams.map((s) => ({
         stream: s.group,
@@ -149,14 +185,33 @@ export function usePrivateEventStream(channelIdHex: string | undefined) {
         epoch: s.epoch,
       }));
 
-      const wraps = await nostr.query(
-        [{ kinds: [KIND_WRAP], authors: streams.map((s) => s.stream.pk), limit: 500 }],
-        { signal, relays },
+      const base = streamFilter(streams);
+      const history = await fetchWraps(
+        query as never,
+        { kinds: base.kinds, authors: base.authors },
+        { relays, signal },
       );
+
+      // The anchor, fetched alongside rather than hoped for. The calendar rumor
+      // is the OLDEST wrap in the stream and `limit` returns the newest, so it
+      // is the first thing a truncated read loses — and losing it renders the
+      // party as one that does not exist. By id the lookup is O(1) and immune
+      // to a flood, and it costs one extra filter on a request already in
+      // flight. No `authors` guard is needed: the id is a hash commitment, and
+      // `openEventWraps` refuses any wrap not authored by a stream key.
+      let wraps = history.wraps;
+      if (anchor && !wraps.some((w) => w.id === anchor)) {
+        const pinned = await nostr.query([{ ids: [anchor] }], { signal, relays });
+        wraps = [...wraps, ...pinned];
+      }
 
       // Deletes are applied here, once, so the calendar, roster, board and
       // thread all inherit the same author-checked rule.
-      return { opened: filterDeleted(openEventWraps(wraps, streams)), channel };
+      return {
+        opened: filterDeleted(openEventWraps(wraps, streams)),
+        channel,
+        complete: history.complete && control.complete,
+      };
     },
     enabled: Boolean(community && channelIdHex),
     staleTime: 15_000,

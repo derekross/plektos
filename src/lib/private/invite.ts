@@ -23,13 +23,17 @@ import {
 import { bytesToHex } from "@/concord/lib/derive";
 import type { Community } from "@/concord/lib/types";
 import type { JoinMaterial } from "@/concord/lib/communityList";
+import { withAnchor } from "./create";
+
+/** Bundle field carrying the shared channel's calendar wrap id. */
+export const PLEKTOS_ANCHOR_FIELD = "plektos_anchor";
 
 /** Build the 33301 bundle event plus the shareable URL for a private event. */
 export function mintInvite(
   community: Community,
   channelIdHex: string,
   origin: string,
-  opts: { description?: string; expiresAt?: number } = {},
+  opts: { description?: string; expiresAt?: number; anchor?: string } = {},
 ) {
   const channel = community.privateChannels.find((c) => bytesToHex(c.id) === channelIdHex);
   if (!channel) throw new Error("That party's channel key isn't in this community.");
@@ -61,12 +65,23 @@ export function mintInvite(
     name: channel.name,
     ...(opts.description ? { description: opts.description } : {}),
     ...(opts.expiresAt ? { expires_at: opts.expiresAt } : {}),
+    // The calendar wrap id for THIS channel, so a guest can open the party in
+    // one lookup instead of walking its whole history. Singular because a
+    // bundle carries exactly one channel; `bundleToJoinMaterial` files it into
+    // the per-channel anchor map on the way into the key list.
+    ...(opts.anchor ? { [PLEKTOS_ANCHOR_FIELD]: opts.anchor } : {}),
   };
 
   return {
     event: buildBundleEvent(bundle, token, sk),
     url: buildInviteUrl(origin, pk, token, community.relays),
     linkSigner: pk,
+    // Both are needed to record the link in the Invite List: the token is its
+    // merge key there, and the signer secret is the ONLY thing that can later
+    // author a revocation at this coordinate. Discarding them, as this did
+    // before, is what made every minted link permanent.
+    token: bytesToHex(token),
+    signerSk: bytesToHex(sk),
   };
 }
 
@@ -121,6 +136,16 @@ export function bundleToJoinMaterial(bundle: InviteBundle): JoinMaterial {
   }
 
   if (typeof bundle.refounder === "string") jm.refounder = bundle.refounder;
+
+  // Named explicitly, like everything else here — a spread would drag the
+  // link-only fields along, and this function's whole discipline is that a
+  // field you forget is a field that goes missing. An anchor is only a cache,
+  // so a bundle without one costs the guest a slower first open, nothing more.
+  const anchor = (bundle as { [k: string]: unknown })[PLEKTOS_ANCHOR_FIELD];
+  const channelId = bundle.channels[0]?.id;
+  if (typeof anchor === "string" && /^[0-9a-f]{64}$/.test(anchor) && channelId) {
+    return withAnchor(jm, channelId, anchor);
+  }
 
   return jm;
 }

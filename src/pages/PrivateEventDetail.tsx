@@ -27,7 +27,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { usePrivateEventCalendar } from "@/hooks/private/usePrivateEventCalendar";
 import { usePrivateEventLive } from "@/hooks/private/usePrivateEventLive";
 import { useDecryptedImage } from "@/hooks/private/useDecryptedImage";
-import { formatCalendarEventWhen, type RsvpStatus } from "@/lib/private/calendar";
+import { endEpoch, formatCalendarEventWhen, type RsvpStatus } from "@/lib/private/calendar";
 
 const RSVP_OPTIONS: { status: RsvpStatus; emoji: string; label: string }[] = [
   { status: "accepted", emoji: "✨", label: "Going" },
@@ -39,7 +39,7 @@ export function PrivateEventDetail() {
   const { channelId } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
   const { user } = useCurrentUser();
-  const { event, tally, isLoading, setRsvp, isHost, community } =
+  const { event, tally, isLoading, setRsvp, isHost, community, complete } =
     usePrivateEventCalendar(channelId);
   // One subscription for the whole page: the roster, board and thread all read
   // the same stream cache, so they update together.
@@ -80,9 +80,11 @@ export function PrivateEventDetail() {
       <div className="container mx-auto max-w-3xl p-8 text-center">
         <h1 className="font-display text-2xl font-bold">{community.name}</h1>
         <p className="mt-2 text-muted-foreground">
-          {isHost
-            ? "Your party is created, but its details haven't landed on the relays yet."
-            : "The host hasn't posted the details yet. Check back soon."}
+          {!complete
+            ? "We couldn't read all of this party's history from the relays, and its details are in the part we didn't reach. Try again in a moment."
+            : isHost
+              ? "Your party is created, but its details haven't landed on the relays yet."
+              : "The host hasn't posted the details yet. Check back soon."}
         </p>
       </div>
     );
@@ -101,6 +103,19 @@ export function PrivateEventDetail() {
 
   return (
     <div className="container mx-auto max-w-3xl space-y-4 p-4 pb-28">
+      {/*
+        A partial read is not a cosmetic problem: the roster, the sign-up board
+        and the thread are all derived from the same stream, so a gap in it
+        shows up as guests who are not listed and items that look unclaimed —
+        indistinguishable from the truth unless we say so.
+      */}
+      {!complete && (
+        <p className="rounded-2xl border border-dashed px-3 py-2 text-sm text-muted-foreground">
+          Showing part of this party's history — some older messages, RSVPs or
+          sign-ups may be missing.
+        </p>
+      )}
+
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl bg-party-gradient p-6 text-primary-foreground">
         {(coverUrl ?? event.image) && (
@@ -218,6 +233,10 @@ export function PrivateEventDetail() {
       <InviteSheet
         community={community}
         channelIdHex={channelId!}
+        // Anchors the link's expiry to the party, not to the moment it was
+        // made: a flat window would kill the link for a party booked months
+        // out, which is exactly when a host shares it.
+        eventEndsMs={endEpoch(event) * 1000}
         open={inviteOpen}
         onOpenChange={setInviteOpen}
       />

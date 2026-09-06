@@ -343,9 +343,8 @@ export function EditEvent({ event, onEventUpdated }: EditEventProps) {
         content: formData.description,
         tags,
       }, {
-        onSuccess: (updatedEvent) => {
+        onSuccess: () => {
           toast.success("Event updated successfully! Changes should appear immediately.");
-          console.log("Event updated with ID:", updatedEvent.id);
           setOpen(false);
 
           // Call the callback to trigger data refresh

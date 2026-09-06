@@ -70,7 +70,7 @@ export function useEnhancedNostrPublish(): UseMutationResult<NostrEvent> {
 
       // Only log failed relays in debug mode to reduce console noise
       if (failedPublishes.length > 0) {
-        console.debug("Some relays failed to publish:", 
+        console.warn("Some relays failed to publish:", 
           failedPublishes.map(r => {
             if (r.status === 'rejected') return r.reason;
             if (r.status === 'fulfilled') return `${r.value.relay}: ${r.value.error}`;

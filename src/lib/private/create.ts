@@ -43,6 +43,53 @@ export const PLEKTOS_EVENTS_NAME = "Plektos Events";
 export const PLEKTOS_EVENTS_MARKER = "plektos_events";
 
 /**
+ * Per-channel wrap id of the calendar rumor that defines each party.
+ *
+ * A pure CACHE, and it matters that it is only ever that. The rumor kind lives
+ * inside the ciphertext, so a relay sees nothing but kind 1059 and an author —
+ * there is no server-side way to ask for "the calendar event", and NIP-01
+ * `limit` returns the NEWEST wraps while the definition is the OLDEST. Knowing
+ * its wrap id turns that into `{ids: [...]}`: one lookup, cost independent of
+ * how much chat the party has accumulated, and immune to a guest flooding the
+ * stream (every key holder can derive the stream key and publish to it without
+ * a signer).
+ *
+ * Losing it must never break anything, because it can be lost: `mergeEntry`
+ * resolves `current` with `freshest()`, which picks one whole JoinMaterial, so
+ * a concurrent write from another device can drop anchors it did not know
+ * about. The fallback is the ordinary backward walk, which still works — just
+ * slower, and boundedly.
+ */
+export const PLEKTOS_ANCHORS = "plektos_anchors";
+
+type AnchorMap = Record<string, string>;
+
+/** The calendar wrap id recorded for one channel, if any. */
+export function readAnchor(
+  jm: { [k: string]: unknown },
+  channelIdHex: string,
+): string | undefined {
+  const anchors = jm[PLEKTOS_ANCHORS];
+  if (!anchors || typeof anchors !== "object") return undefined;
+  const id = (anchors as AnchorMap)[channelIdHex.toLowerCase()];
+  // Anything that is not a 32-byte hex id is ignored rather than queried: this
+  // value round-trips through a shared list other clients also write.
+  return typeof id === "string" && /^[0-9a-f]{64}$/.test(id) ? id : undefined;
+}
+
+/** Record a party's calendar wrap id, preserving anchors for other channels. */
+export function withAnchor<T extends { [k: string]: unknown }>(
+  jm: T,
+  channelIdHex: string,
+  wrapId: string,
+): T {
+  const prev = jm[PLEKTOS_ANCHORS];
+  const anchors: AnchorMap = prev && typeof prev === "object" ? { ...(prev as AnchorMap) } : {};
+  anchors[channelIdHex.toLowerCase()] = wrapId.toLowerCase();
+  return { ...jm, [PLEKTOS_ANCHORS]: anchors };
+}
+
+/**
  * Mint the host's events community.
  *
  * `mintCommunity` also hands back a `generalChannelId`; we ignore it. A public

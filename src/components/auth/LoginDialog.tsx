@@ -1,9 +1,16 @@
 // NOTE: This file is stable and usually should not be modified.
 // It is important that all functionality in this file is preserved, and should only be modified if explicitly requested.
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+
+// 44 kB of QR renderer, needed only when someone picks the remote-signer tab
+// on desktop. Static-importing it put that in the initial bundle for every
+// visitor, including the ones who never sign in.
+const QRCodeSVG = lazy(() =>
+  import('qrcode.react').then((m) => ({ default: m.QRCodeSVG })),
+);
 import { Capacitor } from '@capacitor/core';
-import { QRCodeSVG } from 'qrcode.react';
+
 import { Shield, Upload, Loader2, Copy, Check, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
@@ -298,12 +305,14 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin, onS
                     {/* QR Code - only show on desktop web */}
                     {!showSignerAppButton && (
                       <div className='p-4 bg-white rounded-xl'>
+                        <Suspense fallback={<div className='size-[180px]' />}>
                         <QRCodeSVG
                           value={nostrConnectUri}
                           size={180}
                           level='M'
                           includeMargin={false}
                         />
+                        </Suspense>
                       </div>
                     )}
 
