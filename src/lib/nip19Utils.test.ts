@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { bech32 } from 'bech32';
+import * as nip19 from 'nostr-tools/nip19';
 import { createEventIdentifier, decodeEventIdentifier, createEventUrl, isReplaceableEvent } from './nip19Utils';
 import type { BaseEvent } from './eventTypes';
 
@@ -100,5 +102,34 @@ describe('nip19Utils', () => {
       expect(replaceableUrl).toMatch(/^https:\/\/example\.com\/event\/naddr1/);
       expect(regularUrl).toMatch(/^https:\/\/example\.com\/event\/nevent1/);
     });
+  });
+});
+/**
+ * A malformed TLV identifier must not hang the tab.
+ *
+ * nostr-tools <= 2.23.x looped forever in `parseTLV` when the data ended in a
+ * stray byte: with one byte left, the length read as `undefined`, the cursor
+ * advanced by `NaN` — which `Uint8Array.slice` treats as 0 — and the loop
+ * never made progress. Plektos decodes NIP-19 identifiers pulled straight out
+ * of relay-supplied note content, so anyone could publish a note that froze
+ * the browser of everyone who scrolled past it.
+ *
+ * Note for whoever sees this fail: a regression shows up as the SUITE HANGING,
+ * not as a failed assertion. The bug is a synchronous infinite loop, so no
+ * test timeout can interrupt it. A hung run here means nostr-tools went
+ * backwards.
+ */
+describe("malformed NIP-19 TLV", () => {
+  it("throws instead of looping forever", () => {
+    // A valid entry (type 0, length 32, 32 bytes) plus one trailing byte.
+    const data = new Uint8Array([0, 32, ...new Uint8Array(32).fill(7), 1]);
+    const hostile = bech32.encode("nevent", bech32.toWords(data), 5000);
+
+    expect(() => nip19.decode(hostile)).toThrow();
+  });
+
+  it("still decodes a well-formed identifier", () => {
+    const pubkey = "a".repeat(64);
+    expect(nip19.decode(nip19.npubEncode(pubkey)).data).toBe(pubkey);
   });
 });
